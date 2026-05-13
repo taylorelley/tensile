@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+
 import { Phone, AppHeader, T } from '../../shared';
 
 const options = [
@@ -33,8 +33,6 @@ const options = [
 ];
 
 export default function DeloadStructure() {
-  const navigate = useNavigate();
-
   return (
     <Phone>
       <AppHeader eyebrow="Deload · Structure" title="Pick a path" back />

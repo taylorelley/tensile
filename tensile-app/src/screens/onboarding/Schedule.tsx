@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Phone, Logo, PrimaryBtn, StepDots, T } from '../../shared';
+import { useStore } from '../../store';
 
 const OB_TOTAL = 6;
 
@@ -29,42 +30,71 @@ function OBShell({ step, title, eyebrow, children, footer }: {
   );
 }
 
+const dayShort = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
 export default function Schedule() {
   const navigate = useNavigate();
-  const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-  const active = [true, false, true, false, true, true, false];
+  const profile = useStore(s => s.profile);
+  const setProfile = useStore(s => s.setProfile);
+
+  const [availableDays, setAvailableDays] = useState<boolean[]>(profile.availableDays);
+  const [sessionDuration, setSessionDuration] = useState(profile.sessionDuration);
+
+  const trainingFrequency = availableDays.filter(Boolean).length;
+
+  const toggleDay = (i: number) => {
+    setAvailableDays(prev => {
+      const next = [...prev];
+      next[i] = !next[i];
+      return next;
+    });
+  };
+
+  const handleContinue = () => {
+    setProfile({ availableDays, trainingFrequency, sessionDuration });
+    navigate('/onboarding/first-block');
+  };
+
+  const durations = [45, 60, 75, 90];
 
   return (
     <OBShell
       step={5}
       eyebrow="Step 05 · Schedule"
       title="When can you train?"
-      footer={<PrimaryBtn onClick={() => navigate('/onboarding/first-block')}>Continue →</PrimaryBtn>}
+      footer={<PrimaryBtn onClick={handleContinue}>Continue →</PrimaryBtn>}
     >
-      <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Days available</div>
+      <div className="tns-eyebrow" style={{ marginBottom: 10 }}>
+        Days available <span className="tns-mono" style={{ color: T.accent, fontSize: 10 }}>({trainingFrequency} selected)</span>
+      </div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 22 }}>
-        {days.map((d, i) => (
-          <div key={i} style={{
+        {dayShort.map((d, i) => (
+          <div key={i} onClick={() => toggleDay(i)} style={{
             flex: 1, aspectRatio: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            border: `1px solid ${active[i] ? T.accent : T.line}`,
-            background: active[i] ? T.accent : 'transparent',
-            color: active[i] ? '#1a0f08' : T.textDim,
+            border: `1px solid ${availableDays[i] ? T.accent : T.line}`,
+            background: availableDays[i] ? T.accent : 'transparent',
+            color: availableDays[i] ? '#1a0f08' : T.textDim,
+            cursor: 'pointer',
           }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>{d}</span>
-            <span className="tns-mono" style={{ fontSize: 8, marginTop: 2, opacity: 0.8 }}>{String(i + 13).padStart(2, '0')}</span>
           </div>
         ))}
       </div>
 
       <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Session length preference</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, marginBottom: 22 }}>
-        {['45', '60', '75', '90+'].map((l, i) => (
-          <div key={l} style={{
-            border: `1px solid ${i === 2 ? T.accent : T.line}`,
-            background: i === 2 ? 'rgba(255,110,58,0.06)' : 'transparent',
-            padding: '12px 0', textAlign: 'center', fontFamily: T.mono, fontSize: 14,
-          }}>{l}<span style={{ fontSize: 9, color: T.textMute }}> MIN</span></div>
-        ))}
+        {durations.map((l) => {
+          const displayLabel = l < 90 ? String(l) : '90+';
+          const selected = sessionDuration === l || (l === 90 && sessionDuration >= 90);
+          return (
+            <div key={l} onClick={() => setSessionDuration(l)} style={{
+              border: `1px solid ${selected ? T.accent : T.line}`,
+              background: selected ? 'rgba(255,110,58,0.06)' : 'transparent',
+              padding: '12px 0', textAlign: 'center', fontFamily: T.mono, fontSize: 14,
+              cursor: 'pointer',
+            }}>{displayLabel}<span style={{ fontSize: 9, color: T.textMute }}> MIN</span></div>
+          );
+        })}
       </div>
 
       <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Exclude exercises</div>

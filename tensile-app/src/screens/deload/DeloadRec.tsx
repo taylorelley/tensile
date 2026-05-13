@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+
 import { Phone, AppHeader, PrimaryBtn, T } from '../../shared';
 import { calculateDeloadScore, deloadRecommendation, type DeloadSignals } from '../../engine';
 
@@ -24,8 +24,6 @@ const signalLabels: { key: keyof DeloadSignals; label: string; weight: number }[
 ];
 
 export default function DeloadRec() {
-  const navigate = useNavigate();
-
   const signals: (typeof signalLabels[number] & { on: boolean })[] = signalLabels.map((s) => ({
     ...s,
     on: defaultSignals[s.key],

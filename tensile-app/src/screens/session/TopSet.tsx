@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
-import { ensembleE1RM } from '../../engine';
+import { ensembleE1RM, getRpePct, calculateSetSFI } from '../../engine';
 import { T, Phone, PrimaryBtn } from '../../shared';
+import type { SetLog } from '../../store';
 
 function RPEPad({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const levels = [6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
@@ -23,19 +24,93 @@ function RPEPad({ value, onChange }: { value: number; onChange: (v: number) => v
 
 export default function TopSet() {
   const navigate = useNavigate();
+  const block = useStore(s => s.currentBlock);
+  const currentSession = useStore(s => s.currentSession);
   const profile = useStore(s => s.profile);
+  const logSet = useStore(s => s.logSet);
 
-  const [load, setLoad] = useState(185);
-  const [reps, setReps] = useState(3);
-  const [rpe, setRpe] = useState(8.5);
+  const ex = currentSession?.exercises?.[0];
 
-  const e1rmResult = ensembleE1RM({ load, reps, rpe }, profile.rpeTable, profile.rpeCalibration, profile.rollingE1rm.squat || 200, 0.3);
-  const e1rmDiff = ((e1rmResult.session - (profile.rollingE1rm.squat || 200)) / (profile.rollingE1rm.squat || 200) * 100).toFixed(1);
+  const [load, setLoad] = useState(() => {
+    if (!ex) return 0;
+    const liftKey = ex.id === 'barbell_back_squat' ? 'squat' : ex.id === 'bench_press' ? 'bench' : ex.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
+    const pct = getRpePct(ex.reps, ex.rpeTarget);
+    const e1rmVal = profile.e1rm[liftKey] || 200;
+    return Math.round(e1rmVal * pct / 2.5) * 2.5;
+  });
+  const [reps, setReps] = useState(() => ex?.reps ?? 3);
+  const [rpe, setRpe] = useState(() => ex?.rpeTarget ?? 8.5);
+  const setCounterRef = useRef(0);
+
+  if (!currentSession || !block) {
+    return (
+      <Phone>
+        <div style={{ padding: '8px 22px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span className="tns-eyebrow">Top set</span>
+          <span className="tns-mono" style={{ fontSize: 11, color: T.textMute, cursor: 'pointer' }} onClick={() => navigate('/')}>×  CLOSE</span>
+        </div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 22px' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 32, lineHeight: 1, marginBottom: 12 }}>No session</div>
+            <div style={{ fontSize: 13, color: T.textDim }}>Start a session from Today first.</div>
+          </div>
+        </div>
+      </Phone>
+    );
+  }
+
+  if (!ex) {
+    return (
+      <Phone>
+        <div style={{ padding: '8px 22px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span className="tns-eyebrow">Top set</span>
+          <span className="tns-mono" style={{ fontSize: 11, color: T.textMute, cursor: 'pointer' }} onClick={() => navigate('/')}>×  CLOSE</span>
+        </div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 22px' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 32, lineHeight: 1, marginBottom: 12 }}>No exercise</div>
+            <div style={{ fontSize: 13, color: T.textDim }}>This session has no prescribed exercises.</div>
+          </div>
+        </div>
+      </Phone>
+    );
+  }
+
+  const liftKey = ex.id === 'barbell_back_squat' ? 'squat' : ex.id === 'bench_press' ? 'bench' : ex.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
+  const pct = getRpePct(ex.reps, ex.rpeTarget);
+  const e1rmVal = profile.e1rm[liftKey] || 200;
+  const prescribedLoad = Math.round(e1rmVal * pct / 2.5) * 2.5;
+
+  const rolling = profile.rollingE1rm[liftKey] || 200;
+  const e1rmResult = ensembleE1RM({ load, reps, rpe }, profile.rpeTable, profile.rpeCalibration, rolling, 0.3);
+  const e1rmDiff = ((e1rmResult.session - rolling) / rolling * 100).toFixed(1);
+
+  const topSetsDone = currentSession.sets.filter(s => s.setType === 'TOP_SET').length;
+  const currentSetNum = topSetsDone + 1;
+
+  const handleLogSet = () => {
+    setCounterRef.current += 1;
+    const setLog: SetLog = {
+      id: `set-${setCounterRef.current}`,
+      exerciseId: ex.id,
+      setType: 'TOP_SET',
+      prescribedLoad,
+      actualLoad: load,
+      prescribedReps: ex.reps,
+      actualReps: reps,
+      prescribedRpeTarget: ex.rpeTarget,
+      actualRpe: rpe,
+      e1rm: e1rmResult.session,
+      sfi: calculateSetSFI(rpe, reps, ex.id, true),
+    };
+    logSet(block.id, currentSession.id, setLog);
+    navigate('/session/drop');
+  };
 
   return (
     <Phone>
       <div style={{ padding: '8px 22px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span className="tns-eyebrow">Back squat · Set 1 of 4 · Top</span>
+        <span className="tns-eyebrow">{ex.name} · Set {currentSetNum} of {ex.sets} · Top</span>
         <span className="tns-mono" style={{ fontSize: 11, color: T.textMute, cursor: 'pointer' }} onClick={() => navigate('/')}>×  CLOSE</span>
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
@@ -48,7 +123,7 @@ export default function TopSet() {
             <span className="tns-serif" style={{ fontSize: 42, lineHeight: 0.85, color: T.accent, marginLeft: 14 }}>× {reps}</span>
           </div>
           <div className="tns-mono" style={{ fontSize: 11, color: T.textMute, letterSpacing: '0.06em', marginTop: 10 }}>
-            TARGET · RPE {rpe}  ·  {Math.round((load / (profile.e1rm.squat || 212)) * 100)}% e1RM  ·  REST 3:30
+            TARGET · RPE {rpe}  ·  {Math.round((load / (e1rmVal || 212)) * 100)}% e1RM  ·  REST 3:30
           </div>
         </div>
 
@@ -98,7 +173,7 @@ export default function TopSet() {
       </div>
       <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}`, display: 'flex', gap: 8 }}>
         <PrimaryBtn dim full={false} onClick={() => navigate('/session/override')}>Override</PrimaryBtn>
-        <PrimaryBtn onClick={() => navigate('/session/drop')}>Log & rest →</PrimaryBtn>
+        <PrimaryBtn onClick={handleLogSet}>Log & rest →</PrimaryBtn>
       </div>
     </Phone>
   );

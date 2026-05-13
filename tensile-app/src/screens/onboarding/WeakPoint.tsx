@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Phone, Logo, PrimaryBtn, StepDots, T } from '../../shared';
+import { useStore } from '../../store';
 
 const OB_TOTAL = 6;
 
@@ -29,12 +30,13 @@ function OBShell({ step, title, eyebrow, children, footer }: {
   );
 }
 
-function Choice({ label, sub, selected }: { label: string; sub?: string; selected?: boolean }) {
+function Choice({ label, sub, selected, onClick }: { label: string; sub?: string; selected?: boolean; onClick?: () => void }) {
   return (
-    <div style={{
+    <div onClick={onClick} style={{
       border: `1px solid ${selected ? T.accent : T.line}`,
       background: selected ? 'rgba(255,110,58,0.06)' : 'transparent',
       padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8,
+      cursor: onClick ? 'pointer' : undefined,
     }}>
       <div>
         <div style={{ fontSize: 15, fontWeight: 500 }}>{label}</div>
@@ -52,49 +54,86 @@ function Choice({ label, sub, selected }: { label: string; sub?: string; selecte
   );
 }
 
+interface WeakPointOption {
+  value: string;
+  label: string;
+  sub: string;
+}
+
+const weakPointOptions: Record<string, WeakPointOption[]> = {
+  squat: [
+    { value: 'out_of_hole', label: 'Fails out of the hole', sub: 'Hip extensor / glute limit' },
+    { value: 'back_position_loss', label: 'Loses thoracic position', sub: 'Anterior core / back limit' },
+    { value: 'mid_ascent_stall', label: 'Bends forward (good-morning)', sub: 'Posterior chain relative to quad' },
+    { value: 'falls_forward', label: 'Falls forward at bottom', sub: 'Ankle mobility / balance limit' },
+    { value: 'no_clear_pattern', label: 'No clear pattern yet', sub: 'Skip — balanced accessories' },
+  ],
+  bench: [
+    { value: 'off_chest', label: 'Fails off the chest', sub: 'Pec / front delt limit' },
+    { value: 'lockout_failure', label: 'Fails at lockout', sub: 'Tricep extension limit' },
+    { value: 'arch_stability', label: 'Loses leg drive / arch', sub: 'Posterior chain / setup issue' },
+    { value: 'no_clear_pattern', label: 'No clear pattern yet', sub: 'Skip — balanced accessories' },
+  ],
+  deadlift: [
+    { value: 'off_floor', label: 'Fails off the floor', sub: 'Posterior chain / back strength' },
+    { value: 'lockout_failure', label: 'Fails at lockout', sub: 'Glute / hip extensor limit' },
+    { value: 'back_position_loss', label: 'Loses back position', sub: 'Erector spinae / bracing' },
+    { value: 'no_clear_pattern', label: 'No clear pattern yet', sub: 'Skip — balanced accessories' },
+  ],
+};
+
+const liftOrder = ['squat', 'bench', 'deadlift'] as const;
+type LiftKey = typeof liftOrder[number];
+
+const liftLabels: Record<LiftKey, string> = {
+  squat: 'Squat',
+  bench: 'Bench',
+  deadlift: 'Deadlift',
+};
+
 export default function WeakPoint() {
   const navigate = useNavigate();
+  const profile = useStore(s => s.profile);
+  const setProfile = useStore(s => s.setProfile);
+
+  const [weakPoints, setWeakPoints] = useState<Record<string, string>>({
+    squat: profile.weakPoints?.squat ?? 'no_clear_pattern',
+    bench: profile.weakPoints?.bench ?? 'no_clear_pattern',
+    deadlift: profile.weakPoints?.deadlift ?? 'no_clear_pattern',
+  });
+
+  const handleSelect = (lift: string, value: string) => {
+    setWeakPoints(prev => ({ ...prev, [lift]: value }));
+  };
+
+  const handleContinue = () => {
+    setProfile({ weakPoints });
+    navigate('/onboarding/history');
+  };
 
   return (
     <OBShell
       step={3}
-      eyebrow="Step 03 · Weak point · Squat"
-      title="Where does your squat usually fail?"
-      footer={
-        <div style={{ display: 'flex', gap: 8 }}>
-          <PrimaryBtn dim full={false} onClick={() => navigate('/onboarding/weak-point')}>Skip lift</PrimaryBtn>
-          <PrimaryBtn onClick={() => navigate('/onboarding/history')}>Bench →</PrimaryBtn>
-        </div>
-      }
+      eyebrow="Step 03 · Weak points"
+      title="Where do you usually fail?"
+      footer={<PrimaryBtn onClick={handleContinue}>Continue →</PrimaryBtn>}
     >
-      <div style={{ display: 'flex', gap: 14, marginBottom: 22 }}>
-        <div style={{ width: 100, flexShrink: 0, position: 'relative' }}>
-          <svg width="100" height="160" viewBox="0 0 100 160" fill="none">
-            <line x1="20" y1="14" x2="80" y2="14" stroke={T.text} strokeWidth="2" />
-            <line x1="50" y1="14" x2="50" y2="32" stroke={T.text} strokeWidth="1.5" />
-            <circle cx="50" cy="40" r="8" stroke={T.text} strokeWidth="1.5" />
-            <line x1="50" y1="48" x2="50" y2="84" stroke={T.text} strokeWidth="1.5" />
-            <line x1="50" y1="60" x2="30" y2="76" stroke={T.text} strokeWidth="1.5" />
-            <line x1="50" y1="60" x2="70" y2="76" stroke={T.text} strokeWidth="1.5" />
-            <line x1="50" y1="84" x2="30" y2="110" stroke={T.text} strokeWidth="1.5" />
-            <line x1="50" y1="84" x2="70" y2="110" stroke={T.text} strokeWidth="1.5" />
-            <line x1="30" y1="110" x2="40" y2="140" stroke={T.text} strokeWidth="1.5" />
-            <line x1="70" y1="110" x2="60" y2="140" stroke={T.text} strokeWidth="1.5" />
-            <circle cx="50" cy="92" r="22" stroke={T.accent} strokeWidth="1" strokeDasharray="2 3" fill="none" />
-            <line x1="76" y1="92" x2="92" y2="92" stroke={T.accent} strokeWidth="1" />
-          </svg>
-          <div className="tns-mono" style={{ position: 'absolute', right: -8, top: 86, fontSize: 9, color: T.accent, letterSpacing: '0.06em' }}>HOLE</div>
+      {liftOrder.map(lift => (
+        <div key={lift} style={{ marginBottom: 24 }}>
+          <div className="tns-eyebrow" style={{ marginBottom: 10, marginTop: lift !== 'squat' ? 4 : 0 }}>
+            {liftLabels[lift]}
+          </div>
+          {weakPointOptions[lift].map(opt => (
+            <Choice
+              key={opt.value}
+              label={opt.label}
+              sub={opt.sub}
+              selected={weakPoints[lift] === opt.value}
+              onClick={() => handleSelect(lift, opt.value)}
+            />
+          ))}
         </div>
-        <div style={{ flex: 1, fontSize: 12, color: T.textDim, lineHeight: 1.55, paddingTop: 18 }}>
-          Pick the option that most closely matches your typical failure pattern at near-maximal loads.
-        </div>
-      </div>
-
-      <Choice label="Fails out of the hole" sub="Hip extensor / glute limit" selected />
-      <Choice label="Loses thoracic position" sub="Anterior core / back limit" />
-      <Choice label="Bends forward (good-morning)" sub="Posterior chain relative to quad" />
-      <Choice label="Mid-ascent sticking point" sub="Quadricep contribution limit" />
-      <Choice label="No clear pattern yet" sub="Skip — balanced accessories" />
+      ))}
     </OBShell>
   );
 }

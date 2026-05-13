@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 // Design tokens and shared components for Tensile
 export const T = {
   bg: '#0d0c0a',

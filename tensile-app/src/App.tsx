@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './store';
 
 // Onboarding
@@ -40,7 +40,6 @@ import Attempts from './screens/meet/Attempts';
 
 function App() {
   const onboardingComplete = useStore(s => s.onboardingComplete);
-  const navigate = useNavigate();
 
   return (
     <Routes>

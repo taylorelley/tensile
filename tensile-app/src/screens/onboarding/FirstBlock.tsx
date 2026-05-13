@@ -33,9 +33,13 @@ function OBShell({ step, title, eyebrow, children, footer, scrollable = false }:
 
 export default function FirstBlock() {
   const navigate = useNavigate();
+  const generateFirstBlock = useStore(s => s.generateFirstBlock);
+  const setOnboardingComplete = useStore(s => s.setOnboardingComplete);
+  const profile = useStore(s => s.profile);
 
   const handleLockIn = () => {
-    useStore.getState().setOnboardingComplete(true);
+    generateFirstBlock();
+    setOnboardingComplete(true);
     navigate('/');
   };
 
@@ -63,11 +67,11 @@ export default function FirstBlock() {
         </div>
         <div style={{ background: T.bg, padding: '12px 14px' }}>
           <div className="tns-eyebrow" style={{ marginBottom: 6 }}>TTP estimate</div>
-          <div className="tns-mono" style={{ fontSize: 14 }}>5–7 wk</div>
+          <div className="tns-mono" style={{ fontSize: 14 }}>{profile.ttpEstimate ?? 5}–{Math.min(7, (profile.ttpEstimate ?? 5) + 2)} wk</div>
         </div>
         <div style={{ background: T.bg, padding: '12px 14px' }}>
           <div className="tns-eyebrow" style={{ marginBottom: 6 }}>Frequency</div>
-          <div className="tns-mono" style={{ fontSize: 14 }}>4 ×/wk</div>
+          <div className="tns-mono" style={{ fontSize: 14 }}>{profile.trainingFrequency ?? 4} ×/wk</div>
         </div>
       </div>
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Phone, AppHeader, T } from '../../shared';
+import { Phone, AppHeader, TabBar, T } from '../../shared';
 
 const phases = [
   { l: 'Development', wk: '8 wk', start: 'NOW', col: T.accent, w: 40 },
@@ -158,6 +158,15 @@ export default function Peaking() {
           est. 6 wk). Pivot begins automatically after peak detection.
         </div>
       </div>
+      <TabBar
+        active="meet"
+        onNavigate={(id) => {
+          if (id === 'today') navigate('/');
+          else if (id === 'block') navigate('/block/performance');
+          else if (id === 'meet') navigate('/meet/setup');
+          else navigate('/');
+        }}
+      />
     </Phone>
   );
 }

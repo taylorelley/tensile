@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Phone, Logo, PrimaryBtn, StepDots, T } from '../../shared';
+import { useStore } from '../../store';
 
 const OB_TOTAL = 6;
 
@@ -31,14 +32,33 @@ function OBShell({ step, title, eyebrow, children, footer }: {
 
 export default function History() {
   const navigate = useNavigate();
+  const profile = useStore(s => s.profile);
+  const setProfile = useStore(s => s.setProfile);
+
+  // Derive TTP estimate from training age
+  const ttpEstimate =
+    profile.trainingAge === '1–2 years' ? 4 :
+    profile.trainingAge === '2–5 years' ? 6 :
+    profile.trainingAge === '5+ years' ? 8 :
+    4; // default for 6–12 months or unknown
+
+  const handleContinue = () => {
+    setProfile({ ttpEstimate });
+    navigate('/onboarding/schedule');
+  };
 
   return (
     <OBShell
       step={4}
       eyebrow="Step 04 · Recent context"
       title="What does the last 8 weeks look like?"
-      footer={<PrimaryBtn onClick={() => navigate('/onboarding/schedule')}>Continue →</PrimaryBtn>}
+      footer={<PrimaryBtn onClick={handleContinue}>Continue →</PrimaryBtn>}
     >
+      <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Training age</div>
+      <div style={{ padding: '12px 14px', border: `1px solid ${T.line}`, marginBottom: 18, fontSize: 14, fontWeight: 500 }}>
+        {profile.trainingAge}
+      </div>
+
       <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Most recent programme</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 22 }}>
         {['nSuns', 'Sheiko', '5/3/1', 'Custom RPE', 'Conjugate', 'Other / none'].map((l, i) => (

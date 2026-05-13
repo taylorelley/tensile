@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Phone, Logo, PrimaryBtn, StepDots, T } from '../../shared';
+import { useStore } from '../../store';
 
 const OB_TOTAL = 6;
 
@@ -29,27 +30,42 @@ function OBShell({ step, title, eyebrow, children, footer }: {
   );
 }
 
-function FieldRow({ label, value, unit }: { label: string; value: string; unit?: string }) {
+function FieldRow({ label, value, unit, onChange, inputWidth }: { label: string; value: string; unit?: string; onChange?: (v: string) => void; inputWidth?: number }) {
   return (
     <div style={{ padding: '14px 0', borderBottom: `1px solid ${T.lineSoft}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <span style={{ fontSize: 13, color: T.textDim }}>{label}</span>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-        <span className="tns-mono" style={{ fontSize: 14, fontWeight: 500 }}>{value}</span>
+        {onChange ? (
+          <input
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            style={{
+              fontFamily: T.mono, fontSize: 14, fontWeight: 500, background: 'transparent',
+              border: 'none', borderBottom: '1px solid transparent', color: T.text,
+              textAlign: 'right', width: inputWidth ?? 120, outline: 'none',
+            }}
+            onFocus={e => { e.target.style.borderBottomColor = T.accent; }}
+            onBlur={e => { e.target.style.borderBottomColor = 'transparent'; }}
+          />
+        ) : (
+          <span className="tns-mono" style={{ fontSize: 14, fontWeight: 500 }}>{value}</span>
+        )}
         {unit && <span className="tns-mono" style={{ fontSize: 10, color: T.textMute }}>{unit}</span>}
       </div>
     </div>
   );
 }
 
-function Choice({ label, sub, selected, mono }: { label: string; sub?: string; selected?: boolean; mono?: boolean }) {
+function Choice({ label, sub, selected, onClick }: { label: string; sub?: string; selected?: boolean; onClick?: () => void }) {
   return (
-    <div style={{
+    <div onClick={onClick} style={{
       border: `1px solid ${selected ? T.accent : T.line}`,
       background: selected ? 'rgba(255,110,58,0.06)' : 'transparent',
       padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8,
+      cursor: onClick ? 'pointer' : undefined,
     }}>
       <div>
-        <div className={mono ? 'tns-mono' : ''} style={{ fontSize: mono ? 14 : 15, fontWeight: 500 }}>{label}</div>
+        <div style={{ fontSize: 15, fontWeight: 500 }}>{label}</div>
         {sub && <div style={{ fontSize: 11.5, color: T.textDim, marginTop: 3, fontFamily: T.sans }}>{sub}</div>}
       </div>
       <div style={{
@@ -66,40 +82,68 @@ function Choice({ label, sub, selected, mono }: { label: string; sub?: string; s
 
 export default function Biometrics() {
   const navigate = useNavigate();
+  const profile = useStore(s => s.profile);
+  const setProfile = useStore(s => s.setProfile);
+
+  const [bodyWeight, setBodyWeight] = useState(profile.bodyWeight);
+  const [dob, setDob] = useState(profile.dob);
+  const [sex, setSex] = useState<'Male' | 'Female'>(profile.sex);
+  const [height, setHeight] = useState(profile.height ?? 0);
+  const [trainingAge, setTrainingAge] = useState(profile.trainingAge);
+  const [primaryGoal, setPrimaryGoal] = useState(profile.primaryGoal);
+
+  const handleContinue = () => {
+    setProfile({
+      bodyWeight,
+      dob,
+      sex,
+      height,
+      trainingAge,
+      primaryGoal,
+    });
+    navigate('/onboarding/baselines');
+  };
+
+  const trainingAges = ['6–12 months', '1–2 years', '2–5 years', '5+ years'];
+  const primaryGoals = ['Powerlifting', 'Strength', 'Hypertrophy', 'General'];
 
   return (
     <OBShell
       step={1}
       eyebrow="Step 01 · Biometrics"
       title="Tell us about your body and history."
-      footer={<PrimaryBtn onClick={() => navigate('/onboarding/baselines')}>Continue →</PrimaryBtn>}
+      footer={<PrimaryBtn onClick={handleContinue}>Continue →</PrimaryBtn>}
     >
       <div style={{ marginBottom: 22 }}>
-        <FieldRow label="Body weight" value="84.5" unit="KG" />
-        <FieldRow label="Date of birth" value="1991 · 06 · 12" />
-        <FieldRow label="Biological sex" value="Male" />
-        <FieldRow label="Height" value="178" unit="CM" />
+        <FieldRow label="Body weight" value={String(bodyWeight)} unit="KG" onChange={v => setBodyWeight(Number(v) || 0)} inputWidth={80} />
+        <FieldRow label="Date of birth" value={dob} onChange={setDob} inputWidth={140} />
+        <FieldRow label="Height" value={String(height)} unit="CM" onChange={v => setHeight(Number(v) || 0)} inputWidth={80} />
+      </div>
+
+      <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Biological sex</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
+        {(['Male', 'Female'] as const).map(s => (
+          <div key={s} onClick={() => setSex(s)} style={{
+            border: `1px solid ${sex === s ? T.accent : T.line}`,
+            background: sex === s ? 'rgba(255,110,58,0.06)' : 'transparent',
+            padding: '12px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', textAlign: 'center',
+          }}>{s}</div>
+        ))}
       </div>
 
       <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Training age</div>
-      <Choice label="6–12 months" />
-      <Choice label="1–2 years" />
-      <Choice label="2–5 years" selected />
-      <Choice label="5+ years" />
+      {trainingAges.map(ta => (
+        <Choice key={ta} label={ta} selected={trainingAge === ta} onClick={() => setTrainingAge(ta)} />
+      ))}
 
       <div className="tns-eyebrow" style={{ marginTop: 18, marginBottom: 10 }}>Primary goal</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        {[
-          ['Powerlifting', true],
-          ['Strength', false],
-          ['Hypertrophy', false],
-          ['General', false],
-        ].map(([l, s]) => (
-          <div key={l as string} style={{
-            border: `1px solid ${s ? T.accent : T.line}`,
-            background: s ? 'rgba(255,110,58,0.06)' : 'transparent',
-            padding: '12px 14px', fontSize: 13, fontWeight: 500,
-          }}>{(l as string)}</div>
+        {primaryGoals.map(g => (
+          <div key={g} onClick={() => setPrimaryGoal(g)} style={{
+            border: `1px solid ${primaryGoal === g ? T.accent : T.line}`,
+            background: primaryGoal === g ? 'rgba(255,110,58,0.06)' : 'transparent',
+            padding: '12px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', textAlign: 'center',
+          }}>{g}</div>
         ))}
       </div>
     </OBShell>

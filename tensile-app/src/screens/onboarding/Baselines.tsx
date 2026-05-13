@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Phone, Logo, PrimaryBtn, StepDots, T } from '../../shared';
+import { useStore } from '../../store';
+import { ensembleE1RM } from '../../engine';
 
 const OB_TOTAL = 6;
 
@@ -29,53 +31,161 @@ function OBShell({ step, title, eyebrow, children, footer }: {
   );
 }
 
+const liftMeta = [
+  { key: 'squat' as const, name: 'Back squat' },
+  { key: 'bench' as const, name: 'Bench press' },
+  { key: 'deadlift' as const, name: 'Deadlift' },
+];
+
+interface LiftInput {
+  weight: number;
+  reps: number;
+  rpe: number;
+}
+
 export default function Baselines() {
   const navigate = useNavigate();
-  const lifts = [
-    { name: 'Back squat', weight: '180.0', reps: 3, rpe: '8.5', e1rm: '212' },
-    { name: 'Bench press', weight: '125.0', reps: 4, rpe: '8.0', e1rm: '143' },
-    { name: 'Deadlift', weight: '210.0', reps: 2, rpe: '9.0', e1rm: '233' },
-  ];
+  const profile = useStore(s => s.profile);
+  const setProfile = useStore(s => s.setProfile);
+
+  // Initialise from existing e1rm via reverse estimation (load ~85% of e1rm), or use PRD defaults
+  function defaultLift(key: string): LiftInput {
+    const e1 = profile.e1rm?.[key];
+    if (e1 && e1 > 0) {
+      return { weight: Math.round(e1 * 0.85), reps: 3, rpe: 8.5 };
+    }
+    const defaults: Record<string, LiftInput> = {
+      squat: { weight: 180, reps: 3, rpe: 8.5 },
+      bench: { weight: 125, reps: 4, rpe: 8.0 },
+      deadlift: { weight: 210, reps: 2, rpe: 9.0 },
+    };
+    return defaults[key] ?? { weight: 100, reps: 3, rpe: 8.0 };
+  }
+
+  const [squat, setSquat] = useState<LiftInput>(defaultLift('squat'));
+  const [bench, setBench] = useState<LiftInput>(defaultLift('bench'));
+  const [deadlift, setDeadlift] = useState<LiftInput>(defaultLift('deadlift'));
+
+  const liftData: Record<string, LiftInput> = { squat, bench, deadlift };
+  const setters: Record<string, React.Dispatch<React.SetStateAction<LiftInput>>> = { squat: setSquat, bench: setBench, deadlift: setDeadlift };
+
+  const e1rmResults = useMemo(() => {
+    const results: Record<string, ReturnType<typeof ensembleE1RM>> = {};
+    for (const { key } of liftMeta) {
+      const d = key === 'squat' ? squat : key === 'bench' ? bench : deadlift;
+      results[key] = ensembleE1RM(
+        { load: d.weight, reps: d.reps, rpe: d.rpe },
+        profile.rpeTable,
+        profile.rpeCalibration,
+        profile.rollingE1rm?.[key] ?? 200,
+        0.3,
+      );
+    }
+    return results;
+  }, [squat, bench, deadlift, profile.rpeTable, profile.rpeCalibration, profile.rollingE1rm]);
+
+  const updateField = (key: string, field: keyof LiftInput, raw: string) => {
+    const val = raw === '' ? 0 : Number(raw);
+    if (isNaN(val)) return;
+    const prev = liftData[key];
+    const updated = { ...prev, [field]: val };
+    setters[key](updated);
+  };
+
+  const handleContinue = () => {
+    const e1rm: Record<string, number> = {};
+    const rollingE1rm: Record<string, number> = {};
+    for (const { key } of liftMeta) {
+      const r = e1rmResults[key];
+      e1rm[key] = Math.round(r.session * 10) / 10;
+      rollingE1rm[key] = Math.round(r.rolling * 10) / 10;
+    }
+    setProfile({
+      e1rm,
+      rollingE1rm,
+      rpeCalibration: {
+        sessions: Math.max(1, profile.rpeCalibration.sessions),
+        mae: profile.rpeCalibration.mae,
+      },
+    });
+    navigate('/onboarding/weak-point');
+  };
+
+  const inputStyle = (): React.CSSProperties => ({
+    fontFamily: T.mono,
+    fontSize: 16,
+    padding: '6px 10px',
+    border: `1px solid ${T.line}`,
+    background: 'transparent',
+    color: T.text,
+    outline: 'none',
+    minWidth: 0,
+    width: '100%',
+    boxSizing: 'border-box',
+    textAlign: 'center',
+  });
 
   return (
     <OBShell
       step={2}
       eyebrow="Step 02 · Baselines"
       title="Best recent work sets — we'll estimate your 1RM."
-      footer={<PrimaryBtn onClick={() => navigate('/onboarding/weak-point')}>Continue →</PrimaryBtn>}
+      footer={<PrimaryBtn onClick={handleContinue}>Continue →</PrimaryBtn>}
     >
       <div style={{ marginBottom: 14, padding: '10px 12px', background: T.surface, fontSize: 11, color: T.textDim, lineHeight: 1.5, borderLeft: `2px solid ${T.accent}` }}>
         Enter a recent <span className="tns-mono" style={{ color: T.text }}>weight × reps × RPE</span> for each lift. We use an Epley/Brzycki/RPE ensemble to estimate your 1RM.
       </div>
 
-      {lifts.map((l, i) => (
-        <div key={i} style={{ border: `1px solid ${T.line}`, marginBottom: 10, padding: '12px 14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <span style={{ fontSize: 13.5, fontWeight: 500 }}>{l.name}</span>
-            <span className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}>e1RM</span>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <div>
-                <div style={{ fontSize: 9, color: T.textMute, fontFamily: T.mono, letterSpacing: '0.1em', marginBottom: 4 }}>WEIGHT</div>
-                <div className="tns-mono" style={{ fontSize: 16, padding: '6px 10px', border: `1px solid ${T.line}`, minWidth: 64 }}>{l.weight}</div>
+      {liftMeta.map(({ key, name }) => {
+        const d = liftData[key];
+        const e1 = e1rmResults[key];
+        return (
+          <div key={key} style={{ border: `1px solid ${T.line}`, marginBottom: 10, padding: '12px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <span style={{ fontSize: 13.5, fontWeight: 500 }}>{name}</span>
+              <span className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}>e1RM</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div>
+                  <div style={{ fontSize: 9, color: T.textMute, fontFamily: T.mono, letterSpacing: '0.1em', marginBottom: 4 }}>WEIGHT</div>
+                  <input
+                    value={d.weight || ''}
+                    onChange={e => updateField(key, 'weight', e.target.value)}
+                    style={{ ...inputStyle(), minWidth: 64 }}
+                    onFocus={e => { e.target.style.borderColor = T.accent; }}
+                    onBlur={e => { e.target.style.borderColor = T.line; }}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: T.textMute, fontFamily: T.mono, letterSpacing: '0.1em', marginBottom: 4 }}>REPS</div>
+                  <input
+                    value={d.reps || ''}
+                    onChange={e => updateField(key, 'reps', e.target.value)}
+                    style={{ ...inputStyle(), minWidth: 38 }}
+                    onFocus={e => { e.target.style.borderColor = T.accent; }}
+                    onBlur={e => { e.target.style.borderColor = T.line; }}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: T.textMute, fontFamily: T.mono, letterSpacing: '0.1em', marginBottom: 4 }}>RPE</div>
+                  <input
+                    value={d.rpe || ''}
+                    onChange={e => updateField(key, 'rpe', e.target.value)}
+                    style={{ ...inputStyle(), minWidth: 44 }}
+                    onFocus={e => { e.target.style.borderColor = T.accent; }}
+                    onBlur={e => { e.target.style.borderColor = T.line; }}
+                  />
+                </div>
               </div>
-              <div>
-                <div style={{ fontSize: 9, color: T.textMute, fontFamily: T.mono, letterSpacing: '0.1em', marginBottom: 4 }}>REPS</div>
-                <div className="tns-mono" style={{ fontSize: 16, padding: '6px 10px', border: `1px solid ${T.line}`, minWidth: 38, textAlign: 'center' }}>{l.reps}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 9, color: T.textMute, fontFamily: T.mono, letterSpacing: '0.1em', marginBottom: 4 }}>RPE</div>
-                <div className="tns-mono" style={{ fontSize: 16, padding: '6px 10px', border: `1px solid ${T.line}`, minWidth: 44, textAlign: 'center' }}>{l.rpe}</div>
+              <div style={{ textAlign: 'right' }}>
+                <span className="tns-serif" style={{ fontSize: 28 }}>{Math.round(e1.session)}</span>
+                <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, marginLeft: 3 }}>KG</span>
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <span className="tns-serif" style={{ fontSize: 28 }}>{l.e1rm}</span>
-              <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, marginLeft: 3 }}>KG</span>
-            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       <div style={{ marginTop: 8, fontSize: 11, color: T.textMute, fontFamily: T.mono, letterSpacing: '0.04em' }}>
         + ADD OVERHEAD PRESS (optional)

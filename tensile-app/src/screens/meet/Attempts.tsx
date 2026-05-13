@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Phone, AppHeader, PrimaryBtn, T } from '../../shared';
+import { Phone, AppHeader, PrimaryBtn, TabBar, T } from '../../shared';
 
 const lifts = [
   { l: 'Squat', e1: 230, opener: 215, second: 227, third: 235 },
@@ -117,7 +117,7 @@ export default function Attempts() {
       </div>
       <div
         style={{
-          padding: '14px 22px 28px',
+          padding: '14px 22px 0',
           borderTop: `1px solid ${T.lineSoft}`,
           display: 'flex',
           gap: 8,
@@ -128,6 +128,15 @@ export default function Attempts() {
         </PrimaryBtn>
         <PrimaryBtn>Lock attempts →</PrimaryBtn>
       </div>
+      <TabBar
+        active="meet"
+        onNavigate={(id) => {
+          if (id === 'today') navigate('/');
+          else if (id === 'block') navigate('/block/performance');
+          else if (id === 'meet') navigate('/meet/setup');
+          else navigate('/');
+        }}
+      />
     </Phone>
   );
 }

@@ -51,12 +51,27 @@ export default function Wellness() {
   const [motivation, setMotivation] = useState(defaults.motivation);
   const [stress, setStress] = useState(defaults.stress);
 
+  if (!currentSession || !block) {
+    return (
+      <Phone>
+        <AppHeader eyebrow="Pre-session" title="Readiness" back onBack={() => navigate(-1)} />
+        <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 32, lineHeight: 1, marginBottom: 12 }}>No active session</div>
+            <div style={{ fontSize: 13, color: T.textDim }}>Please start a session from the Today screen.</div>
+          </div>
+        </div>
+        <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}` }}>
+          <PrimaryBtn onClick={() => navigate('/')}>Back to Today →</PrimaryBtn>
+        </div>
+      </Phone>
+    );
+  }
+
   const handleCompute = () => {
     const wellness = { sleepQuality, overallFatigue, muscleSoreness, motivation, stress };
     const rcs = calculateRCS(wellness);
-    if (currentSession && block) {
-      updateSession(block.id, currentSession.id, { wellness, rcs });
-    }
+    updateSession(block.id, currentSession.id, { wellness, rcs });
     navigate('/session/readiness');
   };
 

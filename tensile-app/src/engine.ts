@@ -279,3 +279,12 @@ export function getRpePct(reps: number, rpe: number): number {
   const key = `${reps}@${rpe}`;
   return DEFAULT_RPE_TABLE[key] || 0.80;
 }
+
+export function getBackOffDrop(phase: string): number {
+  switch (phase) {
+    case 'ACCUMULATION': return 0.12;
+    case 'INTENSIFICATION': return 0.07;
+    case 'REALISATION': return 0.03;
+    default: return 0.12;
+  }
+}

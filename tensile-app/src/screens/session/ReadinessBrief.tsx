@@ -1,15 +1,48 @@
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
-import { rcsBand } from '../../engine';
+import { rcsBand, getRpePct, getBackOffDrop } from '../../engine';
 import { T, Phone, AppHeader, PrimaryBtn } from '../../shared';
 
 export default function ReadinessBrief() {
   const navigate = useNavigate();
   const block = useStore(s => s.currentBlock);
   const currentSession = useStore(s => s.currentSession);
+  const profile = useStore(s => s.profile);
 
-  const rcs = currentSession?.rcs ?? 72;
+  if (!currentSession || !block) {
+    return (
+      <Phone>
+        <AppHeader eyebrow="Readiness composite" title="Session brief" back onBack={() => navigate(-1)} />
+        <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 32, lineHeight: 1, marginBottom: 12 }}>No session data</div>
+            <div style={{ fontSize: 13, color: T.textDim }}>Complete the wellness check first.</div>
+          </div>
+        </div>
+        <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}` }}>
+          <PrimaryBtn onClick={() => navigate('/session/wellness')}>Back to wellness →</PrimaryBtn>
+        </div>
+      </Phone>
+    );
+  }
+
+  const rcs = currentSession.rcs || 72;
   const { band, modifier } = rcsBand(rcs);
+
+  const ex = currentSession.exercises?.[0];
+  let topLoad = 185;
+  let backOffLoad = 163;
+  let stopRpe = 8.5;
+  let reps = 3;
+  if (ex) {
+    reps = ex.reps;
+    stopRpe = ex.rpeTarget;
+    const liftKey = ex.id === 'barbell_back_squat' ? 'squat' : ex.id === 'bench_press' ? 'bench' : ex.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
+    const pct = getRpePct(ex.reps, ex.rpeTarget);
+    const e1rm = profile.e1rm[liftKey] || 200;
+    topLoad = Math.round(e1rm * pct / 2.5) * 2.5;
+    backOffLoad = Math.round(topLoad * (1 - getBackOffDrop(block.phase)) / 2.5) * 2.5;
+  }
 
   const bands = [
     [0, 40, T.bad],
@@ -72,15 +105,15 @@ export default function ReadinessBrief() {
           <div style={{ display: 'flex', gap: 14, paddingTop: 8, borderTop: `1px solid ${T.line}` }}>
             <div>
               <div className="tns-eyebrow" style={{ fontSize: 8, marginBottom: 3 }}>TOP SET</div>
-              <span className="tns-mono" style={{ fontSize: 13 }}>185 kg × 3</span>
+              <span className="tns-mono" style={{ fontSize: 13 }}>{topLoad} kg × {reps}</span>
             </div>
             <div>
               <div className="tns-eyebrow" style={{ fontSize: 8, marginBottom: 3 }}>BACK-OFF</div>
-              <span className="tns-mono" style={{ fontSize: 13 }}>163 kg × 3</span>
+              <span className="tns-mono" style={{ fontSize: 13 }}>{backOffLoad} kg × {reps}</span>
             </div>
             <div>
               <div className="tns-eyebrow" style={{ fontSize: 8, marginBottom: 3 }}>STOP @</div>
-              <span className="tns-mono" style={{ fontSize: 13 }}>RPE 8.5</span>
+              <span className="tns-mono" style={{ fontSize: 13 }}>RPE {stopRpe}</span>
             </div>
           </div>
         </div>

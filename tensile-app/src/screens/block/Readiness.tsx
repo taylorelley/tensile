@@ -1,71 +1,302 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Phone, TabBar, T, Chart } from '../../shared';
+import { useStore } from '../../store';
+import type { Session } from '../../store';
+import { Phone, TabBar, T, Chart, Spark } from '../../shared';
+
+function weeklyRcsTrend(
+  sessions: Session[],
+  startDate: string
+): number[] {
+  const start = new Date(startDate).getTime();
+  const weekMap = new Map<number, number[]>();
+  for (const s of sessions) {
+    const daysSince = Math.floor(
+      (new Date(s.scheduledDate).getTime() - start) / (1000 * 60 * 60 * 24)
+    );
+    const week = Math.floor(daysSince / 7);
+    if (!weekMap.has(week)) weekMap.set(week, []);
+    weekMap.get(week)!.push(s.rcs);
+  }
+  if (weekMap.size === 0) return [];
+  const maxWeek = Math.max(...Array.from(weekMap.keys()));
+  return Array.from(
+    { length: maxWeek + 1 },
+    (_, i) => {
+      const vals = weekMap.get(i);
+      return vals && vals.length > 0
+        ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10
+        : 0;
+    }
+  );
+}
+
+const HARDCODED_RCS = [76, 74, 72, 70, 68, 64, 58];
 
 export default function Readiness() {
   const navigate = useNavigate();
-  const rcs = [76, 74, 72, 70, 68, 64, 58];
-  const hrv = [0, -1, -2, -3, -4, -6, -8];
+  const currentBlock = useStore((s) => s.currentBlock);
 
-  const onNavigate = (id: string) => {
-    navigate('/' + id);
-  };
+  const sessions = currentBlock?.sessions ?? [];
+  const startDate = currentBlock?.startDate ?? '';
+
+  let rcs = startDate ? weeklyRcsTrend(sessions, startDate) : [];
+  const rcsHasData = rcs.some((v) => v > 0);
+  if (!rcsHasData) rcs = HARDCODED_RCS;
+
+  const sortedSessions = [...sessions].sort(
+    (a, b) =>
+      new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
+  );
+
+  const rcsModSessions = sortedSessions.filter(
+    (s) => s.overrides && s.overrides.length > 0
+  );
+  const rcsReductions = rcsModSessions.filter(
+    (s) =>
+      s.overrides.some(
+        (o: unknown) => typeof o === 'string' && o.includes('reduction')
+      )
+  );
+  const rcsBumps = rcsModSessions.filter(
+    (s) =>
+      s.overrides.some(
+        (o: unknown) => typeof o === 'string' && o.includes('bump')
+      )
+  );
+
+  const blockLabel = currentBlock
+    ? `Block ${currentBlock.id.slice(-2)} · ${currentBlock.phase}`
+    : 'No active block';
 
   return (
     <Phone>
-      <div style={{ padding: '8px 22px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div className="tns-eyebrow">Block 04 · 7 weeks · closed</div>
-        <div className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}>3 / 6 ›</div>
+      <div
+        style={{
+          padding: '8px 22px 14px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <div className="tns-eyebrow">{blockLabel}</div>
+        <div
+          className="tns-mono"
+          style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}
+        >
+          3 / 6 ›
+        </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
-        <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 34, lineHeight: 1, marginBottom: 4 }}>Readiness</div>
-        <div className="tns-eyebrow" style={{ marginBottom: 20 }}>Weekly composite trend</div>
+        <div
+          style={{
+            fontFamily: T.serif,
+            fontStyle: 'italic',
+            fontSize: 34,
+            lineHeight: 1,
+            marginBottom: 4,
+          }}
+        >
+          Readiness
+        </div>
+        <div className="tns-eyebrow" style={{ marginBottom: 20 }}>
+          Weekly composite trend
+        </div>
 
         <div style={{ marginBottom: 20 }}>
           <Chart data={rcs} color={T.text} w={320} h={90} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontFamily: T.mono, fontSize: 9, color: T.textMute, letterSpacing: '0.06em' }}>
-            <span>W1 · 76</span><span>W4 · 70</span><span>W7 · 58</span>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              marginTop: 4,
+              fontFamily: T.mono,
+              fontSize: 9,
+              color: T.textMute,
+              letterSpacing: '0.06em',
+            }}
+          >
+            {rcs.length > 0 && (
+              <>
+                <span>W1 · {rcs[0]}</span>
+                <span>
+                  W{Math.ceil(rcs.length / 2)} ·{' '}
+                  {rcs[Math.floor(rcs.length / 2)]}
+                </span>
+                <span>
+                  W{rcs.length} · {rcs[rcs.length - 1]}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Soreness heatmap */}
-        <div className="tns-eyebrow" style={{ marginBottom: 8 }}>Soreness · agonist-group dot grid</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 5, marginBottom: 8 }}>
-          {[
-            ...[6,7,6,7,5,8,6],
-            ...[7,6,5,6,4,7,5],
-            ...[6,5,4,5,3,6,4],
-            ...[5,4,3,4,3,5,3],
-          ].map((v, i) => (
-            <div key={i} style={{
-              aspectRatio: '1', background: T.surface,
-              borderLeft: `3px solid ${v >= 6 ? T.good : v >= 4 ? T.caution : T.bad}`,
-              fontFamily: T.mono, fontSize: 10, padding: '3px 4px',
-            }}>{v}</div>
-          ))}
+        {/* Session readiness table */}
+        <div className="tns-eyebrow" style={{ marginBottom: 8 }}>
+          Session readiness
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: T.mono, fontSize: 9, color: T.textMute, letterSpacing: '0.06em', marginBottom: 22 }}>
-          <span>QUAD</span><span>HAM</span><span>CHEST</span><span>BACK</span>
+        <div style={{ border: `1px solid ${T.line}`, marginBottom: 18 }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 50px 50px',
+              padding: '8px 12px',
+              background: T.surface,
+              fontFamily: T.mono,
+              fontSize: 9,
+              color: T.textMute,
+              letterSpacing: '0.06em',
+              borderBottom: `1px solid ${T.lineSoft}`,
+            }}
+          >
+            <span>Date</span>
+            <span style={{ textAlign: 'right' }}>RCS</span>
+            <span style={{ textAlign: 'right' }}>sRPE</span>
+          </div>
+          {sortedSessions.length === 0 ? (
+            <div
+              style={{
+                padding: '14px 12px',
+                fontSize: 11.5,
+                color: T.textDim,
+                textAlign: 'center',
+              }}
+            >
+              No sessions yet
+            </div>
+          ) : (
+            sortedSessions.map((s, i) => (
+              <div
+                key={s.id}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 50px 50px',
+                  padding: '10px 12px',
+                  borderBottom:
+                    i < sortedSessions.length - 1
+                      ? `1px solid ${T.lineSoft}`
+                      : 'none',
+                  alignItems: 'center',
+                }}
+              >
+                <span style={{ fontSize: 12 }}>
+                  {s.scheduledDate}
+                  {s.status === 'COMPLETE' ? (
+                    <span
+                      className="tns-mono"
+                      style={{
+                        fontSize: 8,
+                        color: T.good,
+                        marginLeft: 6,
+                        letterSpacing: '0.08em',
+                      }}
+                    >
+                      DONE
+                    </span>
+                  ) : s.status === 'SKIPPED' ? (
+                    <span
+                      className="tns-mono"
+                      style={{
+                        fontSize: 8,
+                        color: T.bad,
+                        marginLeft: 6,
+                        letterSpacing: '0.08em',
+                      }}
+                    >
+                      SKIP
+                    </span>
+                  ) : (
+                    <span
+                      className="tns-mono"
+                      style={{
+                        fontSize: 8,
+                        color: T.textMute,
+                        marginLeft: 6,
+                        letterSpacing: '0.08em',
+                      }}
+                    >
+                      {s.status === 'IN_PROGRESS' ? 'IN PROG' : 'SCHED'}
+                    </span>
+                  )}
+                </span>
+                <span
+                  className="tns-mono"
+                  style={{
+                    fontSize: 12,
+                    textAlign: 'right',
+                    color:
+                      s.rcs >= 70
+                        ? T.good
+                        : s.rcs >= 50
+                          ? T.caution
+                          : T.bad,
+                  }}
+                >
+                  {s.rcs || '—'}
+                </span>
+                <span
+                  className="tns-mono"
+                  style={{ fontSize: 12, textAlign: 'right' }}
+                >
+                  {s.srpe ?? '—'}
+                </span>
+              </div>
+            ))
+          )}
         </div>
 
-        {/* HRV trend */}
-        <div className="tns-eyebrow" style={{ marginBottom: 8 }}>HRV · 7-day deviation from 28-day baseline</div>
-        <div style={{ marginBottom: 22 }}>
-          <Chart data={hrv} color={T.caution} w={320} h={70} ticks={3} />
+        {/* RCS sparkline */}
+        <div className="tns-eyebrow" style={{ marginBottom: 8 }}>
+          RCS trend
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          <Spark
+            data={rcs}
+            color={T.accent}
+            w={320}
+            h={32}
+          />
         </div>
 
         {/* Modifier session count */}
         <div style={{ border: `1px solid ${T.line}`, padding: '12px 16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <div className="tns-eyebrow">Sessions with RCS prescription mod.</div>
-            <span className="tns-serif" style={{ fontSize: 28 }}>9</span>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+            }}
+          >
+            <div className="tns-eyebrow">
+              Sessions with RCS prescription mod.
+            </div>
+            <span className="tns-serif" style={{ fontSize: 28 }}>
+              {rcsModSessions.length}
+            </span>
           </div>
-          <div style={{ marginTop: 8, fontSize: 11, color: T.textDim, lineHeight: 1.5 }}>
-            7 reductions · 2 elevated readiness bumps. Clustered in weeks 6–7 — supports peak detection.
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 11,
+              color: T.textDim,
+              lineHeight: 1.5,
+            }}
+          >
+            {rcsReductions.length} reductions · {rcsBumps.length} elevated
+            readiness bumps.
+            {rcsModSessions.length === 0 && ' No overrides logged yet.'}
           </div>
         </div>
       </div>
-      <TabBar active="block" onNavigate={onNavigate} />
+      <TabBar
+        active="block"
+        onNavigate={(id) => {
+          if (id === 'today') navigate('/');
+          else if (id === 'block') navigate('/block/performance');
+          else if (id === 'meet') navigate('/meet/setup');
+          else navigate('/');
+        }}
+      />
     </Phone>
   );
 }

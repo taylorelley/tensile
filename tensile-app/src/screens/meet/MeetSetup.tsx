@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Phone, AppHeader, PrimaryBtn, T } from '../../shared';
+import { Phone, AppHeader, PrimaryBtn, TabBar, T } from '../../shared';
 
 const federations: [string, boolean][] = [
   ['IPF', true],
@@ -117,7 +117,7 @@ export default function MeetSetup() {
           Equipment
         </div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
-          {equipmentOptions.map(([l, s], i) => (
+          {equipmentOptions.map(([l, s]) => (
             <div
               key={l}
               style={{
@@ -134,9 +134,18 @@ export default function MeetSetup() {
           ))}
         </div>
       </div>
-      <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}` }}>
+      <div style={{ padding: '14px 22px 0', borderTop: `1px solid ${T.lineSoft}` }}>
         <PrimaryBtn>Generate peaking plan →</PrimaryBtn>
       </div>
+      <TabBar
+        active="meet"
+        onNavigate={(id) => {
+          if (id === 'today') navigate('/');
+          else if (id === 'block') navigate('/block/performance');
+          else if (id === 'meet') navigate('/meet/setup');
+          else navigate('/');
+        }}
+      />
     </Phone>
   );
 }

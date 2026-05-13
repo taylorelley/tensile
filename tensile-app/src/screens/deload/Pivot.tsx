@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+
 import { Phone, AppHeader, PrimaryBtn, T } from '../../shared';
 
 const blockParams: [string, string][] = [
@@ -23,8 +23,6 @@ const schedule = [
 ];
 
 export default function Pivot() {
-  const navigate = useNavigate();
-
   return (
     <Phone>
       <AppHeader eyebrow="Pivot block · 2 wk · May 14 – 27" title="Re-sensitise" back />

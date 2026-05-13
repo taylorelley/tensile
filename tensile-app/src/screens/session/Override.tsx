@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useStore } from '../../store';
 import { T, Phone } from '../../shared';
 
 interface OverrideOption {
@@ -18,6 +19,18 @@ const options: OverrideOption[] = [
 
 export default function Override() {
   const navigate = useNavigate();
+  const block = useStore(s => s.currentBlock);
+  const currentSession = useStore(s => s.currentSession);
+  const updateSession = useStore(s => s.updateSession);
+
+  const handleOverride = (reason: string) => {
+    if (block && currentSession) {
+      updateSession(block.id, currentSession.id, {
+        overrides: [...(currentSession.overrides || []), reason],
+      });
+    }
+    navigate(-1);
+  };
 
   return (
     <Phone>
@@ -38,7 +51,7 @@ export default function Override() {
           <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 28, marginBottom: 18 }}>Override</div>
 
           {options.map((o, i) => (
-            <div key={i} style={{ display: 'flex', gap: 14, padding: '14px 0', borderBottom: i < 5 ? `1px solid ${T.lineSoft}` : 'none', alignItems: 'center', cursor: 'pointer' }} onClick={() => navigate(-1)}>
+            <div key={i} style={{ display: 'flex', gap: 14, padding: '14px 0', borderBottom: i < 5 ? `1px solid ${T.lineSoft}` : 'none', alignItems: 'center', cursor: 'pointer' }} onClick={() => handleOverride(o.label)}>
               <div style={{ width: 32, height: 32, border: `1px solid ${T.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.mono, fontSize: 14, color: T.accent }}>{o.icon}</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 500 }}>{o.label}</div>
