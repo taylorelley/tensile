@@ -1,0 +1,133 @@
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Phone, AppHeader, PrimaryBtn, T } from '../../shared';
+
+const lifts = [
+  { l: 'Squat', e1: 230, opener: 215, second: 227, third: 235 },
+  { l: 'Bench', e1: 152, opener: 142, second: 150, third: 155 },
+  { l: 'Deadlift', e1: 255, opener: 238, second: 252, third: 260 },
+];
+
+const total = lifts.reduce((a, l) => a + l.third, 0);
+
+export default function Attempts() {
+  const navigate = useNavigate();
+
+  return (
+    <Phone>
+      <AppHeader eyebrow="Meet day · 4 days out · Sep 10" title="Attempts" back />
+      <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
+        {/* Headline total */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            marginBottom: 6,
+          }}
+        >
+          <span className="tns-eyebrow">Projected total · all 3rds</span>
+          <span className="tns-mono" style={{ fontSize: 11, color: T.good }}>
+            + 14 KG PR
+          </span>
+        </div>
+        <div
+          className="tns-serif"
+          style={{ fontSize: 88, lineHeight: 0.85, marginBottom: 22 }}
+        >
+          {total}
+          <span className="tns-mono" style={{ fontSize: 14, color: T.textDim, marginLeft: 6 }}>
+            KG
+          </span>
+        </div>
+
+        {lifts.map((l, i) => (
+          <div key={i} style={{ border: `1px solid ${T.line}`, marginBottom: 10 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '10px 14px',
+                borderBottom: `1px solid ${T.lineSoft}`,
+              }}
+            >
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{l.l}</span>
+              <span className="tns-mono" style={{ fontSize: 10, color: T.textMute }}>
+                e1RM · <span style={{ color: T.text }}>{l.e1}</span>
+              </span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr' }}>
+              {[
+                { tag: 'OPENER', v: l.opener, pct: '94%' },
+                { tag: '2ND', v: l.second, pct: '99%' },
+                { tag: '3RD', v: l.third, pct: 'PR', third: true },
+              ].map((a, j) => (
+                <div
+                  key={j}
+                  style={{
+                    padding: '12px 14px',
+                    borderRight: j < 2 ? `1px solid ${T.lineSoft}` : 'none',
+                    background: a.third ? 'rgba(255,110,58,0.06)' : 'transparent',
+                  }}
+                >
+                  <div
+                    className="tns-mono"
+                    style={{
+                      fontSize: 8.5,
+                      color: a.third ? T.accent : T.textMute,
+                      letterSpacing: '0.1em',
+                      marginBottom: 4,
+                    }}
+                  >
+                    {a.tag}
+                  </div>
+                  <span className="tns-serif" style={{ fontSize: 28, color: a.third ? T.accent : T.text }}>
+                    {a.v}
+                  </span>
+                  <div
+                    className="tns-mono"
+                    style={{ fontSize: 9, color: T.textMute, marginTop: 2, letterSpacing: '0.06em' }}
+                  >
+                    {a.pct}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        <div
+          style={{
+            marginTop: 14,
+            padding: '12px 14px',
+            background: T.surface,
+            fontSize: 11.5,
+            color: T.textDim,
+            lineHeight: 1.55,
+          }}
+        >
+          <span className="tns-mono" style={{ fontSize: 9, color: T.accent, letterSpacing: '0.08em' }}>
+            RULES
+          </span>
+          <div style={{ marginTop: 4 }}>
+            IPF · 83 kg raw · 1 min between attempts. Squat/bench/DL openers locked in by warm-up call.
+          </div>
+        </div>
+      </div>
+      <div
+        style={{
+          padding: '14px 22px 28px',
+          borderTop: `1px solid ${T.lineSoft}`,
+          display: 'flex',
+          gap: 8,
+        }}
+      >
+        <PrimaryBtn dim full={false}>
+          Edit
+        </PrimaryBtn>
+        <PrimaryBtn>Lock attempts →</PrimaryBtn>
+      </div>
+    </Phone>
+  );
+}
