@@ -26,9 +26,16 @@ const schedule = [
 export default function Pivot() {
   const navigate = useNavigate();
   const generatePivotBlock = useStore((s) => s.generatePivotBlock);
+
+  const pivotStart = new Date();
+  const pivotEnd = new Date(pivotStart);
+  pivotEnd.setDate(pivotEnd.getDate() + 13);
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const pivotDateRange = `${fmt(pivotStart)} – ${fmt(pivotEnd)}`;
+
   return (
     <Phone>
-      <AppHeader eyebrow="Pivot block · 2 wk · May 14 – 27" title="Re-sensitise" back onBack={() => navigate('/deload/structure')} />
+      <AppHeader eyebrow={`Pivot block · 2 wk · ${pivotDateRange}`} title="Re-sensitise" back onBack={() => navigate('/deload/structure')} />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
         <div
           style={{

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
-import { getBackOffDrop, calculateSetSFI } from '../../engine';
+import { getBackOffDrop, calculateSetSFI, ensembleE1RM } from '../../engine';
 import { T, Phone, PrimaryBtn } from '../../shared';
 import type { SetLog } from '../../store';
 
@@ -26,8 +26,9 @@ export default function DropProtocol() {
   const navigate = useNavigate();
   const block = useStore(s => s.currentBlock);
   const currentSession = useStore(s => s.currentSession);
+  const profile = useStore(s => s.profile);
   const logSet = useStore(s => s.logSet);
-  const [rpe, setRpe] = useState(8);
+  const [rpe, setRpe] = useState(7);
 
   if (!currentSession || !block) {
     return (
@@ -87,19 +88,32 @@ export default function DropProtocol() {
       : topSet.exerciseId === 'conventional_deadlift' ? 'Deadlift'
       : topSet.exerciseId);
 
-  const buildSetLog = (): SetLog => ({
-    id: `set-${Date.now()}`,
-    exerciseId: topSet.exerciseId,
-    setType: 'BACK_OFF',
-    prescribedLoad: backOffLoad,
-    actualLoad: backOffLoad,
-    prescribedReps: topSet.prescribedReps,
-    actualReps: topSet.prescribedReps,
-    prescribedRpeTarget: stopRpe,
-    actualRpe: rpe,
-    e1rm: 0,
-    sfi: calculateSetSFI(rpe, topSet.prescribedReps, topSet.exerciseId, false),
-  });
+  const buildSetLog = (): SetLog => {
+    const liftKey = topSet.exerciseId === 'barbell_back_squat' ? 'squat'
+      : topSet.exerciseId === 'bench_press' ? 'bench'
+      : topSet.exerciseId === 'conventional_deadlift' ? 'deadlift'
+      : 'squat';
+    const e1rmResult = ensembleE1RM(
+      { load: backOffLoad, reps: topSet.prescribedReps, rpe },
+      profile.rpeTable,
+      profile.rpeCalibration,
+      profile.rollingE1rm[liftKey] || 200,
+      0.3,
+    );
+    return {
+      id: `set-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      exerciseId: topSet.exerciseId,
+      setType: 'BACK_OFF',
+      prescribedLoad: backOffLoad,
+      actualLoad: backOffLoad,
+      prescribedReps: topSet.prescribedReps,
+      actualReps: topSet.prescribedReps,
+      prescribedRpeTarget: stopRpe,
+      actualRpe: rpe,
+      e1rm: e1rmResult.session,
+      sfi: calculateSetSFI(rpe, topSet.prescribedReps, topSet.exerciseId, false),
+    };
+  };
 
   const handleLogSet = () => {
     logSet(block.id, currentSession.id, buildSetLog());

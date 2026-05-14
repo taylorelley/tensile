@@ -7,10 +7,8 @@ import { getBackOffDrop } from '../../engine';
 export default function NextBlock() {
   const navigate = useNavigate();
   const currentBlock = useStore((s) => s.currentBlock);
-  const updateBlock = useStore((s) => s.updateBlock);
-  const setProfile = useStore((s) => s.setProfile);
   const profile = useStore((s) => s.profile);
-  const generateFirstBlock = useStore((s) => s.generateFirstBlock);
+  const generateNextDevelopmentBlock = useStore((s) => s.generateNextDevelopmentBlock);
 
   const blockId = currentBlock?.id ?? '—';
   const blockStatus = currentBlock?.status ?? '—';
@@ -22,11 +20,7 @@ export default function NextBlock() {
     : 'No block';
 
   const handleStartBlock = () => {
-    if (currentBlock) {
-      updateBlock(currentBlock.id, { status: 'COMPLETE' as const, endDate: new Date().toISOString().split('T')[0] });
-      setProfile({ completedBlocks: (profile.completedBlocks || 0) + 1 });
-    }
-    generateFirstBlock();
+    generateNextDevelopmentBlock();
     navigate('/');
   };
 

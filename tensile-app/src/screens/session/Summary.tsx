@@ -36,9 +36,11 @@ export default function Summary() {
   // Determine current exercise
   const currentIdx = currentSession.currentExerciseIndex || 0;
   const ex = currentSession.exercises?.[currentIdx];
+  const PRIMARY_IDS = ['barbell_back_squat', 'bench_press', 'conventional_deadlift'];
+  const isPrimaryLift = PRIMARY_IDS.includes(ex?.id ?? '');
   const liftKey = ex?.id === 'barbell_back_squat' ? 'squat' : ex?.id === 'bench_press' ? 'bench' : ex?.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
-  const primaryE1rm = profile.e1rm[liftKey];
-  const liftName = ex?.name || 'Squat';
+  const primaryE1rm = isPrimaryLift ? profile.e1rm[liftKey] : null;
+  const liftName = ex?.name || 'Primary';
 
   const hasMoreExercises = currentIdx < (currentSession.exercises?.length || 0) - 1;
 
@@ -87,7 +89,7 @@ export default function Summary() {
             <Stat label="Volume" value={(volumeLoad / 1000).toFixed(1)} unit="K KG" size={40} />
           </div>
           <div style={{ background: T.bg, padding: '16px 16px' }}>
-            <Stat label={`${liftName} e1RM`} value={String(primaryE1rm?.toFixed(0) ?? '—')} unit="KG" size={40} />
+            <Stat label={isPrimaryLift ? `${liftName} e1RM` : 'e1RM'} value={primaryE1rm != null ? primaryE1rm.toFixed(0) : '—'} unit={primaryE1rm != null ? 'KG' : ''} size={40} />
           </div>
         </div>
 

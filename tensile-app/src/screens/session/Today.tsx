@@ -13,6 +13,7 @@ export default function Today() {
   const profile = useStore(s => s.profile);
   const startSession = useStore(s => s.startSession);
   const updateSession = useStore(s => s.updateSession);
+  const updateBlock = useStore(s => s.updateBlock);
   const generateFirstBlock = useStore(s => s.generateFirstBlock);
 
   const today = new Date().toISOString().split('T')[0];
@@ -80,11 +81,8 @@ export default function Today() {
     if (hasBackOff) {
       const lastBackOff = [...exSets].reverse().find(set => set.setType === 'BACK_OFF');
       if (lastBackOff && lastBackOff.actualRpe >= lastBackOff.prescribedRpeTarget) {
-        // Back-off terminated — move to next exercise or summary
-        const hasNext = exIdx < s.exercises.length - 1;
-        return hasNext
-          ? { label: 'Next exercise →', path: '/session/warmup' }
-          : { label: 'View summary →', path: '/session/summary' };
+        // Back-off terminated — go to Summary which handles index advancement
+        return { label: 'Continue session →', path: '/session/summary' };
       }
       return { label: 'Continue back-off →', path: '/session/drop' };
     }
@@ -92,7 +90,7 @@ export default function Today() {
     return { label: 'Start back-off →', path: '/session/drop' };
   }
 
-  const resumeTarget = session.status === 'IN_PROGRESS' ? getResumeTarget(session) : null;
+  const resumeTarget = (session.status === 'IN_PROGRESS' || session.rcs > 0) ? getResumeTarget(session) : null;
 
   function weeklyBestE1rm(exerciseIds: string[]): number[] {
     if (!block) return [];
@@ -191,7 +189,7 @@ export default function Today() {
             <div style={{ marginTop: 10, textAlign: 'center' }}>
               <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => {
                 if (block) {
-                  useStore.getState().updateBlock(block.id, { phase: 'DELOAD' as const });
+                  updateBlock(block.id, { phase: 'DELOAD' as const });
                   navigate('/deload/rec');
                 }
               }}>TRIGGER DELOAD →</span>
@@ -220,11 +218,15 @@ export default function Today() {
         {/* Block progress strip */}
         <div className="tns-eyebrow" style={{ marginBottom: 8 }}>Block progress</div>
         <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
-          {Array.from({ length: profile.ttpEstimate || 7 }).map((_, i) => (
-            <div key={i} style={{ flex: 1, height: 28, background: i < week - 1 ? '#26221a' : i === week - 1 ? T.accent : T.surface, position: 'relative' }}>
-              {i === week - 1 && <div style={{ position: 'absolute', inset: 0, background: T.accent, opacity: 0.4 }} />}
-            </div>
-          ))}
+          {Array.from({ length: profile.ttpEstimate || 7 }).map((_, i) => {
+            const totalWeeks = profile.ttpEstimate || 7;
+            const currentIdx = Math.min(week - 1, totalWeeks - 1);
+            return (
+              <div key={i} style={{ flex: 1, height: 28, background: i < currentIdx ? '#26221a' : i === currentIdx ? T.accent : T.surface, position: 'relative' }}>
+                {i === currentIdx && <div style={{ position: 'absolute', inset: 0, background: T.accent, opacity: 0.4 }} />}
+              </div>
+            );
+          })}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: T.mono, fontSize: 9, color: T.textMute, letterSpacing: '0.06em' }}>
           <span>WK 1</span><span>WK {week} · NOW</span><span>WK {profile.ttpEstimate || 7} · EST PEAK</span>
