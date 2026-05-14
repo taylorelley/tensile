@@ -55,13 +55,15 @@ export default function Readiness() {
   const rcsReductions = rcsModSessions.filter(
     (s) =>
       s.overrides.some(
-        (o: unknown) => typeof o === 'string' && o.includes('reduction')
+        (o: unknown) =>
+          typeof o === 'string' &&
+          (o.includes('Lower RPE cap') || o.includes('Drop next set') || o.includes('Reactive deload'))
       )
   );
   const rcsBumps = rcsModSessions.filter(
     (s) =>
       s.overrides.some(
-        (o: unknown) => typeof o === 'string' && o.includes('bump')
+        (o: unknown) => typeof o === 'string' && o.includes('Add a set')
       )
   );
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { Phone, TabBar, T, PrimaryBtn } from '../../shared';
+import { getBackOffDrop } from '../../engine';
 
 export default function NextBlock() {
   const navigate = useNavigate();
@@ -107,64 +108,44 @@ export default function NextBlock() {
           Changes from current block
         </div>
         <div style={{ border: `1px solid ${T.line}`, marginBottom: 18 }}>
-          {[
-            {
-              sym: '↑',
-              l: 'Primary lift RPE band → 8.0–9.0',
-              sub: 'Shift to intensification phase',
-              c: T.accent,
-            },
-            {
-              sym: '↓',
-              l: 'Drop-target → 6% (from 12%)',
-              sub: 'Lower volume, higher quality',
-              c: T.accent,
-            },
-            {
-              sym: '↔',
-              l: 'Paused squat retained as Sat. assist',
-              sub: 'r = 0.68 · 3-block correlation',
-              c: T.good,
-            },
-            {
-              sym: '↓',
-              l: 'Front squat removed',
-              sub: 'r = 0.18 · no signal',
-              c: T.textDim,
-            },
-            {
-              sym: '+',
-              l: 'Hip thrust added · 2 sets / wk',
-              sub: 'r = 0.55 · weak-point coverage',
-              c: T.good,
-            },
-          ].map((c, i) => (
-            <div
-              key={i}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                padding: '12px 14px',
-                borderBottom: i < 4 ? `1px solid ${T.lineSoft}` : 'none',
-                gap: 12,
-              }}
-            >
-              <span
-                className="tns-mono"
-                style={{ fontSize: 18, color: c.c, width: 18 }}
+          {(() => {
+            const changes: { sym: string; l: string; sub: string; c: string }[] =
+              phase === 'ACCUMULATION'
+                ? [
+                    { sym: '↑', l: 'Primary RPE band → 8.5–9.0', sub: 'Shift to intensification — fewer reps, heavier loads', c: T.accent },
+                    { sym: '↓', l: `Drop target → ${Math.round(getBackOffDrop('INTENSIFICATION') * 100)}% (from ${Math.round(getBackOffDrop('ACCUMULATION') * 100)}%)`, sub: 'Lower volume, higher quality back-offs', c: T.accent },
+                    { sym: '↓', l: 'Weekly set count decreases', sub: 'Approach MRV before tapering', c: T.caution },
+                  ]
+                : phase === 'INTENSIFICATION'
+                ? [
+                    { sym: '↑', l: 'Primary RPE band → 9.0–9.5', sub: 'Realisation phase — near-maximal efforts', c: T.accent },
+                    { sym: '↓', l: `Drop target → ${Math.round(getBackOffDrop('REALISATION') * 100)}% (from ${Math.round(getBackOffDrop('INTENSIFICATION') * 100)}%)`, sub: 'Minimal back-off volume', c: T.accent },
+                    { sym: '↓', l: 'Volume drops substantially', sub: 'Quality over quantity before peak', c: T.caution },
+                  ]
+                : [
+                    { sym: '↑', l: 'New development block starts', sub: 'Volume resets to MEV; RPE band 7.5–8.5', c: T.accent },
+                    { sym: '↔', l: `Drop target → ${Math.round(getBackOffDrop('ACCUMULATION') * 100)}%`, sub: 'Accumulation phase back-off protocol', c: T.good },
+                    { sym: '+', l: 'Weak-point accessories carried forward', sub: 'Based on correlation from prior block', c: T.good },
+                  ];
+            return changes.map((c, i) => (
+              <div
+                key={i}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '12px 14px',
+                  borderBottom: i < changes.length - 1 ? `1px solid ${T.lineSoft}` : 'none',
+                  gap: 12,
+                }}
               >
-                {c.sym}
-              </span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12.5 }}>{c.l}</div>
-                <div
-                  style={{ fontSize: 10.5, color: T.textDim, marginTop: 2 }}
-                >
-                  {c.sub}
+                <span className="tns-mono" style={{ fontSize: 18, color: c.c, width: 18 }}>{c.sym}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12.5 }}>{c.l}</div>
+                  <div style={{ fontSize: 10.5, color: T.textDim, marginTop: 2 }}>{c.sub}</div>
                 </div>
               </div>
-            </div>
-          ))}
+            ));
+          })()}
         </div>
 
         {/* Targets */}
@@ -173,9 +154,9 @@ export default function NextBlock() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {[
-            { l: 'Squat', from: 218, to: 225 },
-            { l: 'Bench', from: 146, to: 150 },
-            { l: 'DL', from: 246, to: 252 },
+            { l: 'Squat', from: Math.round(profile.e1rm.squat || 0), to: Math.round(((profile.e1rm.squat || 0) * 1.025) / 2.5) * 2.5 },
+            { l: 'Bench', from: Math.round(profile.e1rm.bench || 0), to: Math.round(((profile.e1rm.bench || 0) * 1.025) / 2.5) * 2.5 },
+            { l: 'DL', from: Math.round(profile.e1rm.deadlift || 0), to: Math.round(((profile.e1rm.deadlift || 0) * 1.025) / 2.5) * 2.5 },
           ].map((t, i) => (
             <div
               key={i}

@@ -94,7 +94,7 @@ export default function FirstBlock() {
           return dayNames
             .map((d, i) => ({ d, t: dayMap[i], sub: subMap[i], tag: tagMap[i], available: available[i] }))
             .filter(s => s.available)
-            .map((s, i) => ({
+            .map((s) => ({
               ...s,
               t: s.t.toUpperCase(),
             }));

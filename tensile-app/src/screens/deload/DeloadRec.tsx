@@ -127,7 +127,11 @@ export default function DeloadRec() {
         eyebrow={currentBlock ? `Block ${currentBlock.id.slice(-2)} · Wk ${currentBlock.week}` : 'Deload'}
         title="Deload"
         right={
-          <span className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}>
+          <span
+            className="tns-mono"
+            style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }}
+            onClick={() => navigate('/')}
+          >
             SKIP
           </span>
         }

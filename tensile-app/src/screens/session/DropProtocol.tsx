@@ -80,26 +80,37 @@ export default function DropProtocol() {
   const lastBackOff = currentSession.sets.filter(s => s.setType === 'BACK_OFF' && s.exerciseId === currentExId).slice(-1)[0];
   const previousRpe = lastBackOff?.actualRpe;
 
-  const exerciseLabel = topSet.exerciseId === 'barbell_back_squat' ? 'Back squat' : topSet.exerciseId === 'bench_press' ? 'Bench press' : 'Deadlift';
+  const exerciseLabel =
+    currentSession.exercises.find(e => e.id === topSet.exerciseId)?.name ??
+    (topSet.exerciseId === 'barbell_back_squat' ? 'Back squat'
+      : topSet.exerciseId === 'bench_press' ? 'Bench press'
+      : topSet.exerciseId === 'conventional_deadlift' ? 'Deadlift'
+      : topSet.exerciseId);
+
+  const buildSetLog = (): SetLog => ({
+    id: `set-${Date.now()}`,
+    exerciseId: topSet.exerciseId,
+    setType: 'BACK_OFF',
+    prescribedLoad: backOffLoad,
+    actualLoad: backOffLoad,
+    prescribedReps: topSet.prescribedReps,
+    actualReps: topSet.prescribedReps,
+    prescribedRpeTarget: stopRpe,
+    actualRpe: rpe,
+    e1rm: 0,
+    sfi: calculateSetSFI(rpe, topSet.prescribedReps, topSet.exerciseId, false),
+  });
 
   const handleLogSet = () => {
-    const setLog: SetLog = {
-      id: `set-${Date.now()}`,
-      exerciseId: topSet.exerciseId,
-      setType: 'BACK_OFF',
-      prescribedLoad: backOffLoad,
-      actualLoad: backOffLoad,
-      prescribedReps: topSet.prescribedReps,
-      actualReps: topSet.prescribedReps,
-      prescribedRpeTarget: stopRpe,
-      actualRpe: rpe,
-      e1rm: 0,
-      sfi: calculateSetSFI(rpe, topSet.prescribedReps, topSet.exerciseId, false),
-    };
-    logSet(block.id, currentSession.id, setLog);
+    logSet(block.id, currentSession.id, buildSetLog());
     if (rpe >= stopRpe) {
       navigate('/session/summary');
     }
+  };
+
+  const handleAddSet = () => {
+    logSet(block.id, currentSession.id, buildSetLog());
+    // stay on this screen — user is extending the back-off voluntarily
   };
 
   return (
@@ -156,7 +167,7 @@ export default function DropProtocol() {
         </div>
       </div>
       <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}`, display: 'flex', gap: 8 }}>
-        <PrimaryBtn dim full={false} onClick={handleLogSet}>+ Set</PrimaryBtn>
+        <PrimaryBtn dim full={false} onClick={handleAddSet}>+ Set</PrimaryBtn>
         <PrimaryBtn onClick={handleLogSet}>{isTerminating ? 'Finish →' : 'Log set →'}</PrimaryBtn>
       </div>
     </Phone>

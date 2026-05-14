@@ -11,27 +11,10 @@ export default function ReadinessBrief() {
   const profile = useStore(s => s.profile);
   const updateSession = useStore(s => s.updateSession);
 
-  if (!currentSession || !block) {
-    return (
-      <Phone>
-        <AppHeader eyebrow="Readiness composite" title="Session brief" back onBack={() => navigate(-1)} />
-        <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 32, lineHeight: 1, marginBottom: 12 }}>No session data</div>
-            <div style={{ fontSize: 13, color: T.textDim }}>Complete the wellness check first.</div>
-          </div>
-        </div>
-        <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}` }}>
-          <PrimaryBtn onClick={() => navigate('/session/wellness')}>Back to wellness →</PrimaryBtn>
-        </div>
-      </Phone>
-    );
-  }
-
-  const rcs = currentSession.rcs || 72;
+  // Compute with null-safe access — must happen before any early return so hooks stay unconditional
+  const rcs = currentSession?.rcs || 72;
   const { band, modifier } = rcsBand(rcs);
-
-  const ex = currentSession.exercises?.[currentSession?.currentExerciseIndex || 0];
+  const ex = currentSession?.exercises?.[currentSession?.currentExerciseIndex || 0];
   const liftKey = ex?.id === 'barbell_back_squat' ? 'squat' : ex?.id === 'bench_press' ? 'bench' : ex?.id === 'conventional_deadlift' ? 'deadlift' : 'bench';
   const liftName = liftKey.charAt(0).toUpperCase() + liftKey.slice(1);
   let topLoad = 185;
@@ -39,22 +22,20 @@ export default function ReadinessBrief() {
   let stopRpe = 8.5;
   let reps = 3;
   let rcsModifierNote = '';
-  if (ex) {
+  if (ex && block) {
     reps = ex.reps;
     stopRpe = ex.rpeTarget;
-    const liftKey = ex.id === 'barbell_back_squat' ? 'squat' : ex.id === 'bench_press' ? 'bench' : ex.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
+    const liftKeyInner = ex.id === 'barbell_back_squat' ? 'squat' : ex.id === 'bench_press' ? 'bench' : ex.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
     const pct = getRpePct(ex.reps, ex.rpeTarget);
-    const e1rm = profile.e1rm[liftKey] || 200;
+    const e1rm = profile.e1rm[liftKeyInner] || 200;
     topLoad = Math.round(e1rm * pct / 2.5) * 2.5;
     backOffLoad = Math.round(topLoad * (1 - getBackOffDrop(block.phase)) / 2.5) * 2.5;
 
-    // Apply RCS band modifier to loads
     if (rcs >= 85) {
       topLoad = Math.round(topLoad * 1.03 / 2.5) * 2.5;
       backOffLoad = Math.round(backOffLoad * 1.03 / 2.5) * 2.5;
       rcsModifierNote = '+3% load bump';
     } else if (rcs >= 70) {
-      // No change
       rcsModifierNote = 'no change';
     } else if (rcs >= 55) {
       backOffLoad = Math.round(backOffLoad * 0.98 / 2.5) * 2.5;
@@ -72,24 +53,33 @@ export default function ReadinessBrief() {
 
   // Persist RCS-modified loads to session exercise so downstream screens can read them
   useEffect(() => {
-    if (!ex || !block) return;
-    if (ex.prescribedLoad != null) return; // already persisted
+    if (!ex || !block || !currentSession) return;
+    if (ex.prescribedLoad != null) return;
+    const exIdx = currentSession.currentExerciseIndex ?? 0;
     updateSession(block.id, currentSession.id, {
       exercises: currentSession.exercises.map((e, i) =>
-        i === 0 ? { ...e, prescribedLoad: topLoad, backOffLoad, rpeTarget: stopRpe } : e
+        i === exIdx ? { ...e, prescribedLoad: topLoad, backOffLoad, rpeTarget: stopRpe } : e
       ),
     });
-    // Run once on mount — inputs are stable throughout this screen
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const bands = [
-    [0, 40, T.bad],
-    [40, 55, '#a04030'],
-    [55, 70, T.caution],
-    [70, 85, T.good],
-    [85, 100, T.accent],
-  ] as const;
+  if (!currentSession || !block) {
+    return (
+      <Phone>
+        <AppHeader eyebrow="Readiness composite" title="Session brief" back onBack={() => navigate(-1)} />
+        <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 32, lineHeight: 1, marginBottom: 12 }}>No session data</div>
+            <div style={{ fontSize: 13, color: T.textDim }}>Complete the wellness check first.</div>
+          </div>
+        </div>
+        <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}` }}>
+          <PrimaryBtn onClick={() => navigate('/session/wellness')}>Back to wellness →</PrimaryBtn>
+        </div>
+      </Phone>
+    );
+  }
 
   // Compute actual contributions from session history
   const allCompleted = (block?.sessions ?? [])
@@ -137,6 +127,14 @@ export default function ReadinessBrief() {
     { l: 'RPE drift (3 sess.)', v: `${rpeDrift >= 0 ? '+' : ''}${rpeDrift.toFixed(1)}`, c: rpeDrift > 0.3 ? T.bad : rpeDrift > 0 ? T.caution : T.good },
     { l: `${liftName} from 3 days ago`, v: `${benchDelta >= 0 ? '+' : ''}${benchDelta.toFixed(1)}`, c: benchDelta >= 0 ? T.good : T.bad },
   ];
+
+  const bands = [
+    [0, 40, T.bad],
+    [40, 55, '#a04030'],
+    [55, 70, T.caution],
+    [70, 85, T.good],
+    [85, 100, T.accent],
+  ] as const;
 
   return (
     <Phone>

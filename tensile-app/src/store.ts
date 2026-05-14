@@ -220,6 +220,8 @@ interface AppState {
   logSet: (blockId: string, sessionId: string, set: SetLog) => void;
   completeSession: (blockId: string, sessionId: string, srpe: number) => void;
   generateFirstBlock: () => void;
+  generateDeloadBlock: () => void;
+  generatePivotBlock: () => void;
 
   currentSession: Session | null;
   /** Set by `startSession` internally; exposed for external override if needed */
@@ -368,6 +370,91 @@ export const useStore = create<AppState>()(
         const profile = get().profile;
         const block = generateBlock(profile);
         set({ blocks: [block], currentBlock: block, currentSession: null });
+      },
+
+      generateDeloadBlock: () => {
+        const state = get();
+        const profile = state.profile;
+        const base = generateBlock(profile);
+        const sessions = base.sessions.map(s => ({
+          ...s,
+          exercises: s.exercises.map(ex => ({
+            ...ex,
+            sets: Math.max(1, Math.round(ex.sets * 0.5)),
+            rpeTarget: Math.min(ex.rpeTarget, 7.0),
+          })),
+        }));
+        const deloadBlock: Block = { ...base, type: 'DELOAD', phase: 'DELOAD', sessions };
+        const prevBlock = state.currentBlock;
+        const updatedBlocks = prevBlock
+          ? state.blocks.map(b =>
+              b.id === prevBlock.id
+                ? { ...b, status: 'COMPLETE' as const, endDate: new Date().toISOString().split('T')[0] }
+                : b
+            )
+          : state.blocks;
+        set({
+          profile: { ...profile, completedBlocks: (profile.completedBlocks || 0) + 1 },
+          blocks: [...updatedBlocks, deloadBlock],
+          currentBlock: deloadBlock,
+          currentSession: null,
+        });
+      },
+
+      generatePivotBlock: () => {
+        const state = get();
+        const profile = state.profile;
+        const base = generateBlock(profile);
+        // Two-week pivot: duplicate the sessions to cover 2 weeks
+        const week1 = base.sessions;
+        const startDate = new Date(base.startDate);
+        const week2 = base.sessions.map(s => {
+          const d = new Date(s.scheduledDate);
+          d.setDate(d.getDate() + 7);
+          return {
+            ...s,
+            id: `${s.id}-w2`,
+            scheduledDate: d.toISOString().split('T')[0],
+            exercises: s.exercises.map(ex => ({
+              ...ex,
+              rpeTarget: Math.min(ex.rpeTarget, 8.0),
+              reps: Math.max(ex.reps, 6),
+            })),
+          };
+        });
+        const pivotEndDate = new Date(startDate);
+        pivotEndDate.setDate(pivotEndDate.getDate() + 13);
+        const pivotBlock: Block = {
+          ...base,
+          type: 'PIVOT',
+          phase: 'PIVOT',
+          sessions: [
+            ...week1.map(s => ({
+              ...s,
+              exercises: s.exercises.map(ex => ({
+                ...ex,
+                rpeTarget: Math.min(ex.rpeTarget, 8.0),
+                reps: Math.max(ex.reps, 6),
+              })),
+            })),
+            ...week2,
+          ],
+          endDate: pivotEndDate.toISOString().split('T')[0],
+        };
+        const prevBlock = state.currentBlock;
+        const updatedBlocks = prevBlock
+          ? state.blocks.map(b =>
+              b.id === prevBlock.id
+                ? { ...b, status: 'COMPLETE' as const, endDate: new Date().toISOString().split('T')[0] }
+                : b
+            )
+          : state.blocks;
+        set({
+          profile: { ...profile, completedBlocks: (profile.completedBlocks || 0) + 1 },
+          blocks: [...updatedBlocks, pivotBlock],
+          currentBlock: pivotBlock,
+          currentSession: null,
+        });
       },
 
       currentSession: null,

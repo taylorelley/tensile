@@ -35,8 +35,7 @@ const options = [
 
 export default function DeloadStructure() {
   const navigate = useNavigate();
-  const currentBlock = useStore((s) => s.currentBlock);
-  const updateBlock = useStore((s) => s.updateBlock);
+  const generateDeloadBlock = useStore((s) => s.generateDeloadBlock);
   return (
     <Phone>
       <AppHeader eyebrow="Deload · Structure" title="Pick a path" back onBack={() => navigate('/deload/rec')} />
@@ -46,7 +45,7 @@ export default function DeloadStructure() {
             key={i}
             onClick={() => {
               if (o.t === 'Active deload' || o.t === 'Complete rest') {
-                if (currentBlock) updateBlock(currentBlock.id, { phase: 'DELOAD' as const, type: 'DELOAD' as const });
+                generateDeloadBlock();
                 navigate('/');
               } else if (o.t === 'Pivot block') {
                 navigate('/deload/pivot');

@@ -137,7 +137,7 @@ export function Spark({ data, color = T.accent, w = 80, h = 24, area = true }: {
   const min = Math.min(...data), max = Math.max(...data);
   const range = max - min || 1;
   const pts = data.map((v, i) => [
-    (i / (data.length - 1)) * w,
+    data.length > 1 ? (i / (data.length - 1)) * w : w / 2,
     h - ((v - min) / range) * (h - 2) - 1,
   ]);
   const path = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
@@ -174,7 +174,7 @@ export function Chart({ data, w = 320, h = 100, color = T.accent, ticks = 4, pea
   const pad = (max - min) * 0.15;
   const lo = min - pad, hi = max + pad, range = hi - lo;
   const pts = data.map((v, i) => [
-    (i / (data.length - 1)) * w,
+    data.length > 1 ? (i / (data.length - 1)) * w : w / 2,
     h - ((v - lo) / range) * h,
   ]);
   const path = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
