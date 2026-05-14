@@ -25,8 +25,7 @@ const schedule = [
 
 export default function Pivot() {
   const navigate = useNavigate();
-  const currentBlock = useStore((s) => s.currentBlock);
-  const updateBlock = useStore((s) => s.updateBlock);
+  const generatePivotBlock = useStore((s) => s.generatePivotBlock);
   return (
     <Phone>
       <AppHeader eyebrow="Pivot block · 2 wk · May 14 – 27" title="Re-sensitise" back onBack={() => navigate('/deload/structure')} />
@@ -156,7 +155,7 @@ export default function Pivot() {
       </div>
       <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}` }}>
         <PrimaryBtn onClick={() => {
-          if (currentBlock) updateBlock(currentBlock.id, { phase: 'PIVOT' as const, type: 'PIVOT' as const });
+          generatePivotBlock();
           navigate('/');
         }}>Begin pivot block →</PrimaryBtn>
       </div>

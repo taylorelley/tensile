@@ -30,7 +30,7 @@ function weeklyAverage(
   });
 }
 
-const HARDCODED_QUADS = [12, 13, 14, 15, 16, 17, 14];
+const HARDCODED_SETS = [12, 13, 14, 15, 16, 17, 14];
 const HARDCODED_SFI = [320, 360, 410, 440, 480, 510, 420];
 
 export default function Volume() {
@@ -41,21 +41,27 @@ export default function Volume() {
   const sessions = currentBlock?.sessions ?? [];
   const startDate = currentBlock?.startDate ?? '';
 
-  let quads = startDate
-    ? weeklyAverage(sessions, startDate, (s) => s.volumeLoad / 1000)
+  // Weekly working-set count (TOP_SET + BACK_OFF) — same units as MEV/MRV landmarks
+  let setCountData = startDate
+    ? weeklyAverage(
+        sessions,
+        startDate,
+        (s) => s.sets.filter(set => set.setType === 'TOP_SET' || set.setType === 'BACK_OFF').length
+      )
     : [];
   let sfiData = startDate
     ? weeklyAverage(sessions, startDate, (s) => s.sfi)
     : [];
 
-  const quadsHasData = quads.some((v) => v > 0);
+  const setCountHasData = setCountData.some((v) => v > 0);
   const sfiHasData = sfiData.some((v) => v > 0);
 
-  if (!quadsHasData) quads = HARDCODED_QUADS;
+  if (!setCountHasData) setCountData = HARDCODED_SETS;
   if (!sfiHasData) sfiData = HARDCODED_SFI;
 
   const mev = profile.mevEstimates.quads ?? 10;
   const mrv = profile.mrvEstimates.quads ?? 22;
+  const mav = Math.round((mev + mrv) / 2);
   const blockWeek = currentBlock?.week ?? 1;
   const totalBlockWeeks = profile.ttpEstimate || 7;
   const recoverySignal = currentBlock?.sessions?.[currentBlock.sessions.length - 1]?.rcs ?? 70;
@@ -145,11 +151,11 @@ export default function Volume() {
           Volume & load
         </div>
         <div className="tns-eyebrow" style={{ marginBottom: 20 }}>
-          Volume · weekly aggregate
+          Working sets · weekly total
         </div>
 
         <div style={{ marginBottom: 28 }}>
-          <ChartBars data={quads} w={300} h={100} mev={10} mav={15} mrv={20} />
+          <ChartBars data={setCountData} w={300} h={100} mev={mev} mav={mav} mrv={mrv} />
           <div
             style={{
               display: 'flex',
@@ -161,7 +167,7 @@ export default function Volume() {
               letterSpacing: '0.06em',
             }}
           >
-            {quads.map((_, i) => (
+            {setCountData.map((_, i) => (
               <span key={i}>W{i + 1}</span>
             ))}
           </div>

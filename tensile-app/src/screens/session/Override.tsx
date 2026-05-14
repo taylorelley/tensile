@@ -68,6 +68,7 @@ export default function Override() {
         const lastTopSet = [...sets].reverse().find(s => s.setType === 'TOP_SET' && s.exerciseId === currentExId);
         const source = lastBackOff || lastTopSet || sets[sets.length - 1];
         const newSet: SetLog = {
+          // eslint-disable-next-line react-hooks/purity
           id: `set-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
           exerciseId: source.exerciseId,
           setType: 'BACK_OFF',
@@ -139,6 +140,7 @@ export default function Override() {
         : null;
       if (lastSet) {
         const correctedSet: SetLog = {
+          // eslint-disable-next-line react-hooks/purity
           id: `set-${Date.now()}-load-mod`,
           exerciseId: lastSet.exerciseId,
           setType: lastSet.setType,
@@ -180,11 +182,25 @@ export default function Override() {
 
   return (
     <Phone>
-      {/* Dimmed underlying screen */}
+      {/* Dimmed underlying screen — reflects current session state */}
       <div style={{ position: 'absolute', inset: 0, opacity: 0.35, pointerEvents: 'none' }}>
         <div style={{ padding: '20px 22px' }}>
-          <div className="tns-eyebrow">Back squat · Set 2 of 4 · Back-off</div>
-          <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 80, lineHeight: 0.9, marginTop: 30 }}>163 kg</div>
+          {(() => {
+            const exIdx = currentSession?.currentExerciseIndex ?? 0;
+            const curEx = currentSession?.exercises?.[exIdx];
+            const backOffSets = currentSession?.sets.filter(s => s.setType === 'BACK_OFF' && s.exerciseId === curEx?.id) ?? [];
+            const topSets = currentSession?.sets.filter(s => s.setType === 'TOP_SET' && s.exerciseId === curEx?.id) ?? [];
+            const setNum = backOffSets.length > 0 ? backOffSets.length : topSets.length;
+            const label = backOffSets.length > 0 ? 'Back-off' : 'Top set';
+            const lastSet = currentSession?.sets.slice(-1)[0];
+            const displayLoad = lastSet?.actualLoad ?? curEx?.prescribedLoad ?? 0;
+            return (
+              <>
+                <div className="tns-eyebrow">{curEx?.name ?? '—'} · Set {setNum} · {label}</div>
+                <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 80, lineHeight: 0.9, marginTop: 30 }}>{displayLoad > 0 ? `${displayLoad} kg` : '—'}</div>
+              </>
+            );
+          })()}
         </div>
       </div>
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(13,12,10,0.7)', backdropFilter: 'blur(4px)' }} />
@@ -249,7 +265,7 @@ export default function Override() {
               <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 28, marginBottom: 18 }}>Override</div>
 
               {options.map((o, i) => (
-                <div key={i} style={{ display: 'flex', gap: 14, padding: '14px 0', borderBottom: i < 5 ? `1px solid ${T.lineSoft}` : 'none', alignItems: 'center', cursor: 'pointer' }} onClick={() => handleOverride(o.label)}>
+                <div key={i} style={{ display: 'flex', gap: 14, padding: '14px 0', borderBottom: i < options.length - 1 ? `1px solid ${T.lineSoft}` : 'none', alignItems: 'center', cursor: 'pointer' }} onClick={() => handleOverride(o.label)}>
                   <div style={{ width: 32, height: 32, border: `1px solid ${T.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.mono, fontSize: 14, color: T.accent }}>{o.icon}</div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 500 }}>{o.label}</div>

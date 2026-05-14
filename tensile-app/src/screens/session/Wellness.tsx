@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { calculateRCS } from '../../engine';
@@ -12,7 +12,7 @@ function WellnessSlider({ label, value, low, high, onChange }: {
   const draggingRef = useRef(false);
   const didDrag = useRef(false);
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+  useLayoutEffect(() => { onChangeRef.current = onChange; });
 
   useEffect(() => {
     if (!draggingRef.current) setDisplayValue(value);

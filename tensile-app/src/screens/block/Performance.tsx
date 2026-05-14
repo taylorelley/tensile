@@ -170,12 +170,12 @@ export default function Performance() {
               className="tns-mono"
               style={{
                 fontSize: 11,
-                color: T.good,
+                color: squatDelta >= 0 ? T.good : T.bad,
                 marginTop: 6,
                 letterSpacing: '0.06em',
               }}
             >
-              + {squatDelta.toFixed(1)} KG · + {squatPct}%
+              {squatDelta >= 0 ? '+' : ''}{squatDelta.toFixed(1)} KG · {Number(squatPct) >= 0 ? '+' : ''}{squatPct}%
               {squatPeakWeek >= 0 ? ` · PEAK WK ${squatPeakWeek + 1}` : ''}
             </div>
           </div>
@@ -209,7 +209,8 @@ export default function Performance() {
             {
               l: 'Bench press',
               v: latestBench,
-              d: `+ ${benchPct}%`,
+              d: `${Number(benchPct) >= 0 ? '+' : ''}${benchPct}%`,
+              dColor: benchDelta >= 0 ? T.good : T.bad,
               s: benchTrend,
               peak: benchPeak,
               stall: benchStall,
@@ -217,7 +218,8 @@ export default function Performance() {
             {
               l: 'Deadlift',
               v: latestDeadlift,
-              d: `+ ${deadPct}%`,
+              d: `${Number(deadPct) >= 0 ? '+' : ''}${deadPct}%`,
+              dColor: deadDelta >= 0 ? T.good : T.bad,
               s: deadliftTrend,
               peak: deadliftPeak,
               stall: deadliftStall,
@@ -236,7 +238,7 @@ export default function Performance() {
                 <div style={{ fontSize: 13 }}>{r.l}</div>
                 <div
                   className="tns-mono"
-                  style={{ fontSize: 10, color: T.good, marginTop: 2 }}
+                  style={{ fontSize: 10, color: (r as typeof r & { dColor?: string }).dColor ?? T.good, marginTop: 2 }}
                 >
                   {r.d}
                   {r.peak ? ' · PEAK' : r.stall ? ' · STALL' : ''}
