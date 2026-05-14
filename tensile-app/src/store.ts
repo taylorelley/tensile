@@ -14,6 +14,8 @@ export interface SessionExercise {
   reps: number;
   rpeTarget: number;
   dropPct?: number;
+  prescribedLoad?: number;
+  backOffLoad?: number;
 }
 
 export interface SetLog {
@@ -50,6 +52,7 @@ export interface Session {
   sets: SetLog[];
   exercises: SessionExercise[];
   status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETE' | 'SKIPPED';
+  currentExerciseIndex?: number;
   overrides: unknown[];
 }
 
@@ -84,6 +87,7 @@ export interface UserProfile {
   rollingE1rm: Record<string, number>;
   ttpEstimate: number;
   ttpHistory: number[];
+  meetDate?: string;
   completedBlocks: number;
   rpeCalibration: { sessions: number; mae: number };
   rpeTable: Record<string, number>;
@@ -129,6 +133,7 @@ function createDayPlan(dayIndex: number): { focus: string; exercises: SessionExe
   return { focus, exercises: ex };
 }
 
+/** Internal helper used by `generateFirstBlock` store action. Exported for testing. */
 export function generateBlock(profile: UserProfile): Block {
   const blockId = `block-${Date.now()}`;
   const start = new Date();
@@ -144,6 +149,7 @@ export function generateBlock(profile: UserProfile): Block {
       scheduledDate: d.toISOString().split('T')[0],
       status: 'SCHEDULED',
       exercises: plan.exercises,
+      currentExerciseIndex: 0,
       wellness: { sleepQuality: 7, overallFatigue: 6, muscleSoreness: 5, motivation: 8, stress: 6 },
       rcs: 0,
       sfi: 0,
@@ -184,6 +190,7 @@ const defaultProfile: UserProfile = {
   rollingE1rm: { squat: 210, bench: 142, deadlift: 230 },
   ttpEstimate: 6,
   ttpHistory: [],
+  meetDate: '2026-09-14',
   completedBlocks: 0,
   rpeCalibration: { sessions: 0, mae: 1.0 },
   rpeTable: DEFAULT_RPE_TABLE,
@@ -198,25 +205,26 @@ interface AppState {
 
   profile: UserProfile;
   setProfile: (p: Partial<UserProfile>) => void;
+  /** Available for manual e1RM correction (e.g., user edits post-set RPE in an override flow) */
   updateE1rm: (lift: string, set: SetInput) => void;
 
   blocks: Block[];
   currentBlock: Block | null;
+  /** Superseded by `generateFirstBlock` – kept for manual block insertion if needed */
   addBlock: (block: Block) => void;
   updateBlock: (id: string, updates: Partial<Block>) => void;
+  /** Superseded by `generateFirstBlock` – kept for manual session insertion if needed */
   addSession: (blockId: string, session: Session) => void;
   updateSession: (blockId: string, sessionId: string, updates: Partial<Session>) => void;
-  addSet: (blockId: string, sessionId: string, set: SetLog) => void;
   startSession: (blockId: string, sessionId: string) => void;
   logSet: (blockId: string, sessionId: string, set: SetLog) => void;
   completeSession: (blockId: string, sessionId: string, srpe: number) => void;
   generateFirstBlock: () => void;
 
   currentSession: Session | null;
+  /** Set by `startSession` internally; exposed for external override if needed */
   setCurrentSession: (s: Session | null) => void;
 
-  currentTab: string;
-  setCurrentTab: (t: string) => void;
 }
 
 export const useStore = create<AppState>()(
@@ -273,24 +281,10 @@ export const useStore = create<AppState>()(
           : get().currentBlock,
         currentSession: get().currentSession?.id === sessionId ? { ...get().currentSession!, ...updates } : get().currentSession,
       }),
-      addSet: (blockId, sessionId, setLog) => set({
-        blocks: get().blocks.map(b =>
-          b.id === blockId
-            ? { ...b, sessions: b.sessions.map(s => s.id === sessionId ? { ...s, sets: [...s.sets, setLog] } : s) }
-            : b
-        ),
-        currentBlock: get().currentBlock?.id === blockId
-          ? { ...get().currentBlock!, sessions: get().currentBlock!.sessions.map(s => s.id === sessionId ? { ...s, sets: [...s.sets, setLog] } : s) }
-          : get().currentBlock,
-        currentSession: get().currentSession?.id === sessionId
-          ? { ...get().currentSession!, sets: [...get().currentSession!.sets, setLog] }
-          : get().currentSession,
-      }),
-
       startSession: (blockId, sessionId) => {
         const block = get().blocks.find(b => b.id === blockId);
         const session = block?.sessions.find(s => s.id === sessionId);
-        if (session) set({ currentSession: session });
+        if (session) set({ currentSession: { ...session, currentExerciseIndex: session.currentExerciseIndex ?? 0 } });
       },
 
       logSet: (blockId, sessionId, setLog) => {
@@ -339,13 +333,34 @@ export const useStore = create<AppState>()(
 
       completeSession: (blockId, sessionId, srpe) => {
         const state = get();
-        const updates: Partial<Session> = { status: 'COMPLETE', completedDate: new Date().toISOString().split('T')[0], srpe };
+        const sessionUpdates: Partial<Session> = { status: 'COMPLETE', completedDate: new Date().toISOString().split('T')[0], srpe };
+
+        // Check if all sessions in current week are done (COMPLETE or SKIPPED)
+        const block = state.blocks.find(b => b.id === blockId);
+        let blockUpdates: Partial<Block> = {};
+        if (block) {
+          const updatedSessions = block.sessions.map(s =>
+            s.id === sessionId ? { ...s, ...sessionUpdates } : s
+          );
+          const start = new Date(block.startDate).getTime();
+          const currentWeek = block.week;
+          const weekSessions = updatedSessions.filter(s => {
+            const daysSince = Math.floor((new Date(s.scheduledDate).getTime() - start) / (1000 * 60 * 60 * 24));
+            const sWeek = Math.floor(daysSince / 7) + 1;
+            return sWeek === currentWeek;
+          });
+          const allDone = weekSessions.every(s => s.status === 'COMPLETE' || s.status === 'SKIPPED');
+          if (allDone && weekSessions.length > 0) {
+            blockUpdates = { week: currentWeek + 1 };
+          }
+        }
+
         set({
-          blocks: state.blocks.map(b => b.id === blockId ? { ...b, sessions: b.sessions.map(s => s.id === sessionId ? { ...s, ...updates } : s) } : b),
+          blocks: state.blocks.map(b => b.id === blockId ? { ...b, ...blockUpdates, sessions: b.sessions.map(s => s.id === sessionId ? { ...s, ...sessionUpdates } : s) } : b),
           currentBlock: state.currentBlock?.id === blockId
-            ? { ...state.currentBlock, sessions: state.currentBlock.sessions.map(s => s.id === sessionId ? { ...s, ...updates } : s) }
+            ? { ...state.currentBlock, ...blockUpdates, sessions: state.currentBlock.sessions.map(s => s.id === sessionId ? { ...s, ...sessionUpdates } : s) }
             : state.currentBlock,
-          currentSession: state.currentSession?.id === sessionId ? { ...state.currentSession, ...updates } : state.currentSession,
+          currentSession: state.currentSession?.id === sessionId ? { ...state.currentSession, ...sessionUpdates } : state.currentSession,
         });
       },
 
@@ -358,8 +373,6 @@ export const useStore = create<AppState>()(
       currentSession: null,
       setCurrentSession: (s) => set({ currentSession: s }),
 
-      currentTab: 'today',
-      setCurrentTab: (t) => set({ currentTab: t }),
     }),
     {
       name: 'tensile-storage',
@@ -368,7 +381,6 @@ export const useStore = create<AppState>()(
         profile: state.profile,
         blocks: state.blocks,
         currentBlock: state.currentBlock,
-        currentTab: state.currentTab,
       }),
     }
   )

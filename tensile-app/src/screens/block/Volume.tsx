@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import type { Session } from '../../store';
 import { Phone, TabBar, T, Chart, ChartBars } from '../../shared';
+import { volumeBudget } from '../../engine';
 
 function weeklyAverage(
   sessions: Session[],
@@ -35,6 +36,7 @@ const HARDCODED_SFI = [320, 360, 410, 440, 480, 510, 420];
 export default function Volume() {
   const navigate = useNavigate();
   const currentBlock = useStore((s) => s.currentBlock);
+  const profile = useStore((s) => s.profile);
 
   const sessions = currentBlock?.sessions ?? [];
   const startDate = currentBlock?.startDate ?? '';
@@ -52,14 +54,53 @@ export default function Volume() {
   if (!quadsHasData) quads = HARDCODED_QUADS;
   if (!sfiHasData) sfiData = HARDCODED_SFI;
 
+  const mev = profile.mevEstimates.quads ?? 10;
+  const mrv = profile.mrvEstimates.quads ?? 22;
+  const blockWeek = currentBlock?.week ?? 1;
+  const totalBlockWeeks = profile.ttpEstimate || 7;
+  const recoverySignal = currentBlock?.sessions?.[currentBlock.sessions.length - 1]?.rcs ?? 70;
+  const weeklyBudget = volumeBudget(mev, mrv, blockWeek, totalBlockWeeks, recoverySignal);
+
   const totalVolume = sessions.length > 0
     ? (sessions.reduce((sum, s) => sum + s.volumeLoad, 0) / 1000).toFixed(1)
-    : '64.2';
+    : '—';
   const totalSrpeLoad = sessions.length > 0
-    ? String(sessions.reduce((sum, s) => sum + (s.srpe ?? 0) * (s.sfi || 1), 0))
-    : '2 856';
+    ? String(Math.round(sessions.reduce((sum, s) => sum + (s.srpe ?? 0) * (s.sfi || 1), 0)))
+    : '—';
   const sessionsLogged = sessions.filter((s) => s.status === 'COMPLETE').length;
   const totalSessions = sessions.length;
+
+  // Compute peak ACLR from actual session data
+  const sortedCompleted = [...sessions]
+    .filter((s) => s.status === 'COMPLETE')
+    .sort((a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime());
+  let peakAclr = 0;
+  let peakAclrWeek = '—';
+  if (sortedCompleted.length >= 2) {
+    const start = new Date(currentBlock?.startDate ?? sortedCompleted[0].scheduledDate).getTime();
+    const weekMap = new Map<number, number[]>();
+    for (const s of sortedCompleted) {
+      const daysSince = Math.floor(
+        (new Date(s.scheduledDate).getTime() - start) / (1000 * 60 * 60 * 24)
+      );
+      const week = Math.floor(daysSince / 7);
+      if (!weekMap.has(week)) weekMap.set(week, []);
+      weekMap.get(week)!.push(s.sfi);
+    }
+    let prevAvg = 0;
+    for (let w = 0; w <= Math.max(...Array.from(weekMap.keys())); w++) {
+      const vals = weekMap.get(w);
+      const avg = vals && vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+      if (prevAvg > 0 && avg > 0) {
+        const aclr = avg / prevAvg;
+        if (aclr > peakAclr) {
+          peakAclr = aclr;
+          peakAclrWeek = `wk ${w + 1}`;
+        }
+      }
+      prevAvg = avg;
+    }
+  }
 
   const blockLabel = currentBlock
     ? `Block ${currentBlock.id.slice(-2)} · ${currentBlock.phase}`
@@ -75,10 +116,18 @@ export default function Volume() {
           alignItems: 'center',
         }}
       >
+        <div
+          className="tns-mono"
+          style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }}
+          onClick={() => navigate('/block/performance')}
+        >
+          ‹ 1 / 6
+        </div>
         <div className="tns-eyebrow">{blockLabel}</div>
         <div
           className="tns-mono"
-          style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}
+          style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }}
+          onClick={() => navigate('/block/readiness')}
         >
           2 / 6 ›
         </div>
@@ -139,9 +188,10 @@ export default function Volume() {
           }}
         >
           {[
+            ['Volume budget', String(weeklyBudget), 'SETS'],
             ['Total volume', totalVolume, 'K KG'],
             ['Total sRPE load', totalSrpeLoad, 'AU'],
-            ['Peak ACLR · wk 5', '1.32', '×'],
+            ['Peak ACLR' + (peakAclrWeek !== '—' ? ' · ' + peakAclrWeek : ''), peakAclr > 0 ? peakAclr.toFixed(2) : '—', '×'],
             [
               'Sessions logged',
               `${sessionsLogged}`,
@@ -180,11 +230,14 @@ export default function Volume() {
             borderLeft: `2px solid ${T.caution}`,
           }}
         >
-          ACLR peaked at{' '}
-          <span className="tns-mono">1.32</span> in week 5 — below the{' '}
-          <span className="tns-mono">1.5</span> warning threshold. Quad volume
-          crossed MAV in week 6; performance regressed week 7 — consistent with
-          MRV-adjacent loading.
+          {peakAclr > 0 ? (
+            <>
+              ACLR peaked at <span className="tns-mono">{peakAclr.toFixed(2)}</span> {peakAclrWeek !== '—' ? `in ${peakAclrWeek}` : ''} — {' '}
+              {peakAclr >= 1.5 ? 'above' : 'below'} the <span className="tns-mono">1.5</span> warning threshold.
+            </>
+          ) : (
+            <>No completed sessions yet to compute ACLR trends.</>
+          )}
         </div>
       </div>
       <TabBar
@@ -192,6 +245,7 @@ export default function Volume() {
         onNavigate={(id) => {
           if (id === 'today') navigate('/');
           else if (id === 'block') navigate('/block/performance');
+          else if (id === 'lifts') navigate('/lifts');
           else if (id === 'meet') navigate('/meet/setup');
           else navigate('/');
         }}

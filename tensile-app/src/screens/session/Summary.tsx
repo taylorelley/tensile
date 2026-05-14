@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useStore } from '../../store';
+import { useStore, type SetLog } from '../../store';
 import { T, Phone, AppHeader, PrimaryBtn, Stat } from '../../shared';
 
 export default function Summary() {
@@ -9,6 +9,7 @@ export default function Summary() {
   const currentSession = useStore(s => s.currentSession);
   const profile = useStore(s => s.profile);
   const completeSession = useStore(s => s.completeSession);
+  const updateSession = useStore(s => s.updateSession);
   const [srpe, setSrpe] = useState(7);
 
   if (!currentSession || !block) {
@@ -32,15 +33,23 @@ export default function Summary() {
   const sfi = currentSession.sfi || 0;
   const sets = currentSession.sets || [];
 
-  // Determine primary lift
-  const ex = currentSession.exercises?.[0];
+  // Determine current exercise
+  const currentIdx = currentSession.currentExerciseIndex || 0;
+  const ex = currentSession.exercises?.[currentIdx];
   const liftKey = ex?.id === 'barbell_back_squat' ? 'squat' : ex?.id === 'bench_press' ? 'bench' : ex?.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
   const primaryE1rm = profile.e1rm[liftKey];
   const liftName = ex?.name || 'Squat';
 
+  const hasMoreExercises = currentIdx < (currentSession.exercises?.length || 0) - 1;
+
   const handleLogSession = () => {
-    completeSession(block.id, currentSession.id, srpe);
-    navigate('/');
+    if (hasMoreExercises) {
+      updateSession(block.id, currentSession.id, { currentExerciseIndex: currentIdx + 1 });
+      navigate('/session/warmup');
+    } else {
+      completeSession(block.id, currentSession.id, srpe);
+      navigate('/');
+    }
   };
 
   return (
@@ -82,36 +91,92 @@ export default function Summary() {
           </div>
         </div>
 
-        {/* Notable flags */}
-        <div style={{ background: T.surface, padding: '12px 14px', borderLeft: `2px solid ${T.good}`, marginBottom: 14 }}>
-          <span className="tns-mono" style={{ fontSize: 9, color: T.good, letterSpacing: '0.08em' }}>NOTABLE</span>
-          <div style={{ marginTop: 4, fontSize: 12.5, color: T.text, lineHeight: 1.55 }}>
-            Session completed with {sets.length} set{sets.length !== 1 ? 's' : ''} logged. SFI: {sfi.toFixed(1)} — Volume: {(volumeLoad / 1000).toFixed(1)}K KG.
-          </div>
-        </div>
+        {/* Notable flags — dynamic analysis */}
+        {(() => {
+          const flags: { color: string; label: string; message: string }[] = [];
 
-        {/* Set log */}
-        <div className="tns-eyebrow" style={{ marginBottom: 8 }}>Set log · {liftName}</div>
-        <div style={{ border: `1px solid ${T.line}`, fontFamily: T.mono, fontSize: 11.5 }}>
-          {sets.length === 0 ? (
-            <div style={{ padding: '12px', color: T.textMute, fontSize: 11 }}>No sets logged yet.</div>
-          ) : (
-            sets.map((s, i) => {
-              const typeLabel = s.setType === 'TOP_SET' ? 'TOP' : s.setType === 'BACK_OFF' ? (s.actualRpe >= s.prescribedRpeTarget ? 'TERM' : 'B-O') : s.setType;
-              return (
-                <div key={s.id} style={{ display: 'grid', gridTemplateColumns: '60px 1fr 70px 50px', padding: '10px 12px', borderBottom: i < sets.length - 1 ? `1px solid ${T.lineSoft}` : 'none', alignItems: 'center' }}>
-                  <span style={{ color: T.textMute, letterSpacing: '0.04em' }}>SET {i + 1}</span>
-                  <span>{s.actualLoad} × {s.actualReps}</span>
-                  <span style={{ color: T.textDim }}>RPE {s.actualRpe}</span>
-                  <span style={{ fontSize: 9, color: typeLabel === 'TERM' ? T.accent : T.textMute, letterSpacing: '0.08em' }}>{typeLabel}</span>
+          // e1RM gain on primary lift
+          const topSets = sets.filter(s => s.setType === 'TOP_SET');
+          if (topSets.length > 0) {
+            const bestE1rm = Math.max(...topSets.map(s => s.e1rm));
+            const prevE1rm = profile.rollingE1rm[liftKey] || bestE1rm;
+            const gain = ((bestE1rm - prevE1rm) / prevE1rm) * 100;
+            if (gain >= 1.0) {
+              flags.push({ color: T.good, label: 'GAIN', message: `${liftName} e1RM up ${gain.toFixed(1)}% — strong session.` });
+            } else if (gain <= -1.0) {
+              flags.push({ color: T.bad, label: 'DIP', message: `${liftName} e1RM down ${Math.abs(gain).toFixed(1)}% — monitor fatigue.` });
+            }
+          }
+
+          // High SFI warning
+          if (sfi > 50) {
+            flags.push({ color: T.caution, label: 'HIGH SFI', message: `Session fatigue index ${sfi.toFixed(0)} — elevated systemic load.` });
+          }
+
+          // Back-off termination efficiency
+          const backOffSets = sets.filter(s => s.setType === 'BACK_OFF');
+          if (backOffSets.length > 0) {
+            const terminated = backOffSets.filter(s => s.actualRpe >= s.prescribedRpeTarget);
+            if (terminated.length > 0 && backOffSets.length <= 2) {
+              flags.push({ color: T.good, label: 'EFFICIENT', message: `Back-off terminated in ${backOffSets.length} set${backOffSets.length > 1 ? 's' : ''} — low residual fatigue.` });
+            } else if (backOffSets.length >= 6) {
+              flags.push({ color: T.caution, label: 'HIGH VOLUME', message: `${backOffSets.length} back-off sets completed — high work capacity today.` });
+            }
+          }
+
+          // Overrides used
+          if (currentSession.overrides && currentSession.overrides.length > 0) {
+            flags.push({ color: T.accent, label: 'OVERRIDE', message: `${currentSession.overrides.length} adjustment${currentSession.overrides.length > 1 ? 's' : ''} logged this session.` });
+          }
+
+          // Fallback if no flags
+          if (flags.length === 0) {
+            flags.push({ color: T.textDim, label: 'SESSION', message: `${sets.length} set${sets.length !== 1 ? 's' : ''} logged · SFI ${sfi.toFixed(1)} · ${(volumeLoad / 1000).toFixed(1)}K KG volume.` });
+          }
+
+          return flags.map((f, i) => (
+            <div key={i} style={{ background: T.surface, padding: '12px 14px', borderLeft: `2px solid ${f.color}`, marginBottom: i < flags.length - 1 ? 8 : 14 }}>
+              <span className="tns-mono" style={{ fontSize: 9, color: f.color, letterSpacing: '0.08em' }}>{f.label}</span>
+              <div style={{ marginTop: 4, fontSize: 12.5, color: T.text, lineHeight: 1.55 }}>{f.message}</div>
+            </div>
+          ));
+        })()}
+
+        {/* Set log — grouped by exercise */}
+        <div className="tns-eyebrow" style={{ marginBottom: 8 }}>Set log</div>
+        {sets.length === 0 ? (
+          <div style={{ border: `1px solid ${T.line}`, padding: '12px', color: T.textMute, fontFamily: T.mono, fontSize: 11 }}>No sets logged yet.</div>
+        ) : (
+          (() => {
+            const grouped: Record<string, SetLog[]> = {};
+            sets.forEach(s => {
+              if (!grouped[s.exerciseId]) grouped[s.exerciseId] = [];
+              grouped[s.exerciseId].push(s);
+            });
+            const exMap = Object.fromEntries((currentSession.exercises || []).map(e => [e.id, e.name]));
+            return Object.entries(grouped).map(([exId, exSets], gi) => (
+              <div key={exId} style={{ marginBottom: gi < Object.keys(grouped).length - 1 ? 8 : 0 }}>
+                <div className="tns-eyebrow" style={{ fontSize: 9, marginBottom: 4, color: T.textDim }}>{exMap[exId] || exId}</div>
+                <div style={{ border: `1px solid ${T.line}`, fontFamily: T.mono, fontSize: 11.5 }}>
+                  {exSets.map((s, i) => {
+                    const typeLabel = s.setType === 'TOP_SET' ? 'TOP' : s.setType === 'BACK_OFF' ? (s.actualRpe >= s.prescribedRpeTarget ? 'TERM' : 'B-O') : s.setType;
+                    return (
+                      <div key={s.id} style={{ display: 'grid', gridTemplateColumns: '60px 1fr 70px 50px', padding: '10px 12px', borderBottom: i < exSets.length - 1 ? `1px solid ${T.lineSoft}` : 'none', alignItems: 'center' }}>
+                        <span style={{ color: T.textMute, letterSpacing: '0.04em' }}>SET {i + 1}</span>
+                        <span>{s.actualLoad} × {s.actualReps}</span>
+                        <span style={{ color: T.textDim }}>RPE {s.actualRpe}</span>
+                        <span style={{ fontSize: 9, color: typeLabel === 'TERM' ? T.accent : T.textMute, letterSpacing: '0.08em' }}>{typeLabel}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })
-          )}
-        </div>
+              </div>
+            ));
+          })()
+        )}
       </div>
       <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}` }}>
-        <PrimaryBtn onClick={handleLogSession}>Log session →</PrimaryBtn>
+        <PrimaryBtn onClick={handleLogSession}>{hasMoreExercises ? 'Next exercise →' : 'Log session →'}</PrimaryBtn>
       </div>
     </Phone>
   );

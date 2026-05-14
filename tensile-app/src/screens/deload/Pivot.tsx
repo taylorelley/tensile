@@ -1,5 +1,6 @@
 import React from 'react';
-
+import { useNavigate } from 'react-router-dom';
+import { useStore } from '../../store';
 import { Phone, AppHeader, PrimaryBtn, T } from '../../shared';
 
 const blockParams: [string, string][] = [
@@ -23,9 +24,12 @@ const schedule = [
 ];
 
 export default function Pivot() {
+  const navigate = useNavigate();
+  const currentBlock = useStore((s) => s.currentBlock);
+  const updateBlock = useStore((s) => s.updateBlock);
   return (
     <Phone>
-      <AppHeader eyebrow="Pivot block · 2 wk · May 14 – 27" title="Re-sensitise" back />
+      <AppHeader eyebrow="Pivot block · 2 wk · May 14 – 27" title="Re-sensitise" back onBack={() => navigate('/deload/structure')} />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
         <div
           style={{
@@ -151,7 +155,10 @@ export default function Pivot() {
         </div>
       </div>
       <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}` }}>
-        <PrimaryBtn>Begin pivot block →</PrimaryBtn>
+        <PrimaryBtn onClick={() => {
+          if (currentBlock) updateBlock(currentBlock.id, { phase: 'PIVOT' as const, type: 'PIVOT' as const });
+          navigate('/');
+        }}>Begin pivot block →</PrimaryBtn>
       </div>
     </Phone>
   );

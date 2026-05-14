@@ -192,6 +192,7 @@ export function detectStall(e1rmTrend: number[], blockWeek: number): boolean {
 // §6.8 Deload Trigger
 export interface DeloadSignals {
   peakDetected: boolean;
+  stallDetected: boolean;
   wellnessSustainedLow: boolean;
   rpeDrift: boolean;
   hrvTrendLow: boolean;
@@ -203,6 +204,7 @@ export interface DeloadSignals {
 export function calculateDeloadScore(signals: DeloadSignals): number {
   let score = 0;
   if (signals.peakDetected) score += 5;
+  if (signals.stallDetected) score += 4;
   if (signals.wellnessSustainedLow) score += 4;
   if (signals.rpeDrift) score += 3;
   if (signals.hrvTrendLow) score += 2;

@@ -20,33 +20,12 @@ export const T = {
   mono: '"JetBrains Mono", ui-monospace, monospace',
 } as const;
 
-export function StatusBar({ time = '8:14', dark = true }: { time?: string; dark?: boolean }) {
-  const c = dark ? T.text : '#000';
-  return (
-    <div style={{
-      height: 44, padding: '0 20px', display: 'flex', alignItems: 'center',
-      justifyContent: 'space-between', fontFamily: T.sans, fontSize: 14,
-      fontWeight: 600, color: c, flexShrink: 0,
-    }}>
-      <span className="tns-mono" style={{ fontWeight: 500 }}>{time}</span>
-      <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-        <svg width="16" height="10" viewBox="0 0 16 10"><path d="M1 9h2V6H1zM5 9h2V4H5zM9 9h2V2H9zM13 9h2V0h-2z" fill={c}/></svg>
-        <svg width="14" height="10" viewBox="0 0 14 10"><path d="M7 2.5c1.7 0 3.3.6 4.5 1.7l.7-.8C10.8 2 9 1.3 7 1.3S3.2 2 1.8 3.4l.7.8C3.7 3.1 5.3 2.5 7 2.5zM7 5c1 0 2 .4 2.7 1l.7-.8C9.5 4.4 8.3 4 7 4s-2.5.4-3.4 1.2l.7.8C5 5.4 6 5 7 5zm0 2.5c.5 0 1 .2 1.3.5l.7-.7C8.4 6.7 7.7 6.5 7 6.5s-1.4.2-2 .8l.7.7c.3-.3.8-.5 1.3-.5z" fill={c}/></svg>
-        <div style={{ width: 22, height: 11, border: `1px solid ${c}`, borderRadius: 3, position: 'relative', opacity: 0.7 }}>
-          <div style={{ position: 'absolute', inset: 1, background: c, width: '70%' }} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function Phone({ children, time, statusDark = true, bg = T.bg }: { children: React.ReactNode; time?: string; statusDark?: boolean; bg?: string }) {
+export function Phone({ children, bg = T.bg }: { children: React.ReactNode; bg?: string }) {
   return (
     <div style={{
       width: '100%', height: '100%', background: bg, position: 'relative',
       display: 'flex', flexDirection: 'column', overflow: 'hidden',
     }}>
-      <StatusBar time={time} dark={statusDark} />
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }}>
         {children}
       </div>

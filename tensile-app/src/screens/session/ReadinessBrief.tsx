@@ -1,13 +1,15 @@
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { rcsBand, getRpePct, getBackOffDrop } from '../../engine';
-import { T, Phone, AppHeader, PrimaryBtn } from '../../shared';
+import { T, Phone, AppHeader, PrimaryBtn, MetricRow } from '../../shared';
 
 export default function ReadinessBrief() {
   const navigate = useNavigate();
   const block = useStore(s => s.currentBlock);
   const currentSession = useStore(s => s.currentSession);
   const profile = useStore(s => s.profile);
+  const updateSession = useStore(s => s.updateSession);
 
   if (!currentSession || !block) {
     return (
@@ -29,11 +31,14 @@ export default function ReadinessBrief() {
   const rcs = currentSession.rcs || 72;
   const { band, modifier } = rcsBand(rcs);
 
-  const ex = currentSession.exercises?.[0];
+  const ex = currentSession.exercises?.[currentSession?.currentExerciseIndex || 0];
+  const liftKey = ex?.id === 'barbell_back_squat' ? 'squat' : ex?.id === 'bench_press' ? 'bench' : ex?.id === 'conventional_deadlift' ? 'deadlift' : 'bench';
+  const liftName = liftKey.charAt(0).toUpperCase() + liftKey.slice(1);
   let topLoad = 185;
   let backOffLoad = 163;
   let stopRpe = 8.5;
   let reps = 3;
+  let rcsModifierNote = '';
   if (ex) {
     reps = ex.reps;
     stopRpe = ex.rpeTarget;
@@ -42,7 +47,41 @@ export default function ReadinessBrief() {
     const e1rm = profile.e1rm[liftKey] || 200;
     topLoad = Math.round(e1rm * pct / 2.5) * 2.5;
     backOffLoad = Math.round(topLoad * (1 - getBackOffDrop(block.phase)) / 2.5) * 2.5;
+
+    // Apply RCS band modifier to loads
+    if (rcs >= 85) {
+      topLoad = Math.round(topLoad * 1.03 / 2.5) * 2.5;
+      backOffLoad = Math.round(backOffLoad * 1.03 / 2.5) * 2.5;
+      rcsModifierNote = '+3% load bump';
+    } else if (rcs >= 70) {
+      // No change
+      rcsModifierNote = 'no change';
+    } else if (rcs >= 55) {
+      backOffLoad = Math.round(backOffLoad * 0.98 / 2.5) * 2.5;
+      rcsModifierNote = '-2% back-off drop';
+    } else if (rcs >= 40) {
+      backOffLoad = Math.round(backOffLoad * 0.95 / 2.5) * 2.5;
+      stopRpe = Math.max(5, stopRpe - 1.0);
+      rcsModifierNote = '-5% back-off, −1 RPE cap';
+    } else {
+      backOffLoad = Math.round(backOffLoad * 0.90 / 2.5) * 2.5;
+      stopRpe = Math.max(5, stopRpe - 1.0);
+      rcsModifierNote = '-10% back-off, −1 RPE cap';
+    }
   }
+
+  // Persist RCS-modified loads to session exercise so downstream screens can read them
+  useEffect(() => {
+    if (!ex || !block) return;
+    if (ex.prescribedLoad != null) return; // already persisted
+    updateSession(block.id, currentSession.id, {
+      exercises: currentSession.exercises.map((e, i) =>
+        i === 0 ? { ...e, prescribedLoad: topLoad, backOffLoad, rpeTarget: stopRpe } : e
+      ),
+    });
+    // Run once on mount — inputs are stable throughout this screen
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const bands = [
     [0, 40, T.bad],
@@ -52,11 +91,51 @@ export default function ReadinessBrief() {
     [85, 100, T.accent],
   ] as const;
 
+  // Compute actual contributions from session history
+  const allCompleted = (block?.sessions ?? [])
+    .filter((s) => s.status === 'COMPLETE')
+    .sort((a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime());
+
+  // HRV trend modifier: proxy from wellness fatigue trend
+  const recentWellness = allCompleted.slice(-3);
+  const avgFatigue =
+    recentWellness.length > 0
+      ? recentWellness.reduce((sum, s) => sum + s.wellness.overallFatigue, 0) / recentWellness.length
+      : 6;
+  const hrvMod = Math.round((avgFatigue - 6) * -1.5);
+
+  // RPE drift: difference between last 3 and first 3 completed session sRPEs
+  let rpeDrift = 0;
+  if (allCompleted.length >= 6) {
+    const first3 = allCompleted.slice(0, 3);
+    const last3 = allCompleted.slice(-3);
+    const avgFirst = first3.reduce((sum, s) => sum + (s.srpe ?? 0), 0) / first3.length;
+    const avgLast = last3.reduce((sum, s) => sum + (s.srpe ?? 0), 0) / last3.length;
+    rpeDrift = Math.round((avgLast - avgFirst) * 10) / 10;
+  }
+
+  // Recent same-lift e1RM: compare current e1RM to most recent session of the same lift
+  let benchDelta = 0;
+  const threeDaysAgo = new Date();
+  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+  const recentLiftSession = [...allCompleted]
+    .reverse()
+    .find(
+      (s) =>
+        new Date(s.scheduledDate) >= threeDaysAgo &&
+        s.sets.some((set) => set.exerciseId === (ex?.id || 'bench_press'))
+    );
+  if (recentLiftSession) {
+    const liftSets = recentLiftSession.sets.filter((set) => set.exerciseId === (ex?.id || 'bench_press'));
+    const recentE1rm = liftSets.length > 0 ? Math.max(...liftSets.map((s) => s.e1rm)) : profile.e1rm[liftKey];
+    benchDelta = Math.round((profile.e1rm[liftKey] - recentE1rm) * 10) / 10;
+  }
+
   const contributions = [
-    { l: 'Wellness composite', v: '+74', c: T.good },
-    { l: 'HRV trend modifier', v: '−2', c: T.caution },
-    { l: 'RPE drift (3 sess.)', v: '−0', c: T.textDim },
-    { l: 'Bench from 3 days ago', v: '+0', c: T.textDim },
+    { l: 'Wellness composite', v: `+${rcs}`, c: rcs >= 70 ? T.good : rcs >= 55 ? T.caution : T.bad },
+    { l: 'HRV trend modifier', v: `${hrvMod >= 0 ? '+' : ''}${hrvMod}`, c: hrvMod >= 0 ? T.good : T.caution },
+    { l: 'RPE drift (3 sess.)', v: `${rpeDrift >= 0 ? '+' : ''}${rpeDrift.toFixed(1)}`, c: rpeDrift > 0.3 ? T.bad : rpeDrift > 0 ? T.caution : T.good },
+    { l: `${liftName} from 3 days ago`, v: `${benchDelta >= 0 ? '+' : ''}${benchDelta.toFixed(1)}`, c: benchDelta >= 0 ? T.good : T.bad },
   ];
 
   return (
@@ -99,23 +178,17 @@ export default function ReadinessBrief() {
         {/* Prescription modifier */}
         <div style={{ background: T.surface, padding: '14px 16px', borderLeft: `2px solid ${T.accent}` }}>
           <div className="tns-eyebrow" style={{ marginBottom: 8, color: T.accent }}>Prescription · {band}</div>
-          <div style={{ fontSize: 13, color: T.text, lineHeight: 1.55, marginBottom: 8 }}>
+          <div style={{ fontSize: 13, color: T.text, lineHeight: 1.55, marginBottom: 4 }}>
             {modifier}
           </div>
-          <div style={{ display: 'flex', gap: 14, paddingTop: 8, borderTop: `1px solid ${T.line}` }}>
-            <div>
-              <div className="tns-eyebrow" style={{ fontSize: 8, marginBottom: 3 }}>TOP SET</div>
-              <span className="tns-mono" style={{ fontSize: 13 }}>{topLoad} kg × {reps}</span>
-            </div>
-            <div>
-              <div className="tns-eyebrow" style={{ fontSize: 8, marginBottom: 3 }}>BACK-OFF</div>
-              <span className="tns-mono" style={{ fontSize: 13 }}>{backOffLoad} kg × {reps}</span>
-            </div>
-            <div>
-              <div className="tns-eyebrow" style={{ fontSize: 8, marginBottom: 3 }}>STOP @</div>
-              <span className="tns-mono" style={{ fontSize: 13 }}>RPE {stopRpe}</span>
-            </div>
+          <div className="tns-mono" style={{ fontSize: 10, color: T.caution, marginBottom: 10, letterSpacing: '0.03em' }}>
+            RCS modifier: {rcsModifierNote}
           </div>
+          <MetricRow items={[
+            { label: 'TOP SET', value: `${topLoad} kg × ${reps}` },
+            { label: 'BACK-OFF', value: `${backOffLoad} kg × ${reps}` },
+            { label: 'STOP @', value: `RPE ${stopRpe}` },
+          ]} />
         </div>
       </div>
       <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}` }}>

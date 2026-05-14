@@ -1,8 +1,9 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useStore } from '../../store';
 import type { Session } from '../../store';
 import { Phone, TabBar, T, Chart, Spark } from '../../shared';
+import { detectPeak, detectStall } from '../../engine';
 
 function weeklyBestE1rm(
   sessions: Session[],
@@ -36,6 +37,7 @@ const HARDCODED_DEADLIFT = [232, 236, 240, 243, 246, 244, 240];
 
 export default function Performance() {
   const navigate = useNavigate();
+  const location = useLocation();
   const currentBlock = useStore((s) => s.currentBlock);
   const profile = useStore((s) => s.profile);
 
@@ -90,7 +92,16 @@ export default function Performance() {
   const deadDelta = lastDead - firstDead;
   const deadPct = firstDead > 0 ? ((deadDelta / firstDead) * 100).toFixed(1) : '0.0';
 
-  const peakWeek = squatTrend.indexOf(Math.max(...squatTrend));
+  const blockWeek = currentBlock?.week ?? 1;
+  const minimumTTP = profile.ttpEstimate;
+  const squatPeak = detectPeak(squatTrend, minimumTTP, blockWeek);
+  const squatStall = detectStall(squatTrend, blockWeek);
+  const benchPeak = detectPeak(benchTrend, minimumTTP, blockWeek);
+  const benchStall = detectStall(benchTrend, blockWeek);
+  const deadliftPeak = detectPeak(deadliftTrend, minimumTTP, blockWeek);
+  const deadliftStall = detectStall(deadliftTrend, blockWeek);
+
+  const squatPeakWeek = squatPeak ? squatTrend.indexOf(Math.max(...squatTrend)) : -1;
 
   return (
     <Phone>
@@ -105,7 +116,8 @@ export default function Performance() {
         <div className="tns-eyebrow">{blockLabel}</div>
         <div
           className="tns-mono"
-          style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}
+          style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }}
+          onClick={() => navigate('/block/volume')}
         >
           1 / 6 ›
         </div>
@@ -164,13 +176,13 @@ export default function Performance() {
               }}
             >
               + {squatDelta.toFixed(1)} KG · + {squatPct}%
-              {peakWeek >= 0 ? ` · PEAK WK ${peakWeek + 1}` : ''}
+              {squatPeakWeek >= 0 ? ` · PEAK WK ${squatPeakWeek + 1}` : ''}
             </div>
           </div>
         </div>
 
         <div style={{ marginTop: 20 }}>
-          <Chart data={squatTrend} peak={peakWeek >= 0 ? peakWeek : undefined} w={320} h={110} />
+          <Chart data={squatTrend} peak={squatPeakWeek >= 0 ? squatPeakWeek : undefined} w={320} h={110} />
           <div
             style={{
               display: 'flex',
@@ -199,12 +211,16 @@ export default function Performance() {
               v: latestBench,
               d: `+ ${benchPct}%`,
               s: benchTrend,
+              peak: benchPeak,
+              stall: benchStall,
             },
             {
               l: 'Deadlift',
               v: latestDeadlift,
               d: `+ ${deadPct}%`,
               s: deadliftTrend,
+              peak: deadliftPeak,
+              stall: deadliftStall,
             },
           ].map((r, i) => (
             <div
@@ -223,6 +239,7 @@ export default function Performance() {
                   style={{ fontSize: 10, color: T.good, marginTop: 2 }}
                 >
                   {r.d}
+                  {r.peak ? ' · PEAK' : r.stall ? ' · STALL' : ''}
                 </div>
               </div>
               <Spark data={r.s} w={70} h={22} />
@@ -255,9 +272,9 @@ export default function Performance() {
           }}
         >
           {[
-            ['This block', String(peakWeek >= 0 ? peakWeek + 1 : '—'), 'WK', T.accent],
-            ['Last 3 avg', '5.7', 'WK', T.text],
-            ['Pattern', 'Dip→', 'PROG', T.text],
+            ['This block', String(squatPeakWeek >= 0 ? squatPeakWeek + 1 : '—'), 'WK', T.accent],
+            ['Last 3 avg', profile.ttpHistory.length >= 3 ? (profile.ttpHistory.slice(-3).reduce((a, b) => a + b, 0) / 3).toFixed(1) : '—', 'WK', T.text],
+            ['Pattern', squatPeak ? 'Peak→' : squatStall ? 'Stall→' : 'Dip→', squatPeak ? 'PEAK' : squatStall ? 'STALL' : 'PROG', squatPeak ? T.good : squatStall ? T.bad : T.text],
           ].map(([l, v, u, c], i) => (
             <div key={i} style={{ background: T.bg, padding: '12px 14px' }}>
               <div
@@ -285,10 +302,11 @@ export default function Performance() {
         </div>
       </div>
       <TabBar
-        active="block"
+        active={location.pathname === '/lifts' ? 'lifts' : 'block'}
         onNavigate={(id) => {
           if (id === 'today') navigate('/');
           else if (id === 'block') navigate('/block/performance');
+          else if (id === 'lifts') navigate('/lifts');
           else if (id === 'meet') navigate('/meet/setup');
           else navigate('/');
         }}

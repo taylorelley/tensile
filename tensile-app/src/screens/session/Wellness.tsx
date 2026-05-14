@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { calculateRCS } from '../../engine';
@@ -7,21 +7,90 @@ import { T, Phone, AppHeader, PrimaryBtn, Spark } from '../../shared';
 function WellnessSlider({ label, value, low, high, onChange }: {
   label: string; value: number; low: string; high: string; onChange: (v: number) => void;
 }) {
-  const pct = (value - 1) / 9 * 100;
-  const colorPct = value >= 7 ? T.good : value >= 5 ? T.caution : T.bad;
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [displayValue, setDisplayValue] = useState(value);
+  const draggingRef = useRef(false);
+  const didDrag = useRef(false);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  useEffect(() => {
+    if (!draggingRef.current) setDisplayValue(value);
+  }, [value]);
+
+  const computeValue = (clientX: number) => {
+    if (!trackRef.current) return value;
+    const rect = trackRef.current.getBoundingClientRect();
+    const x = clientX - rect.left;
+    return Math.max(1, Math.min(10, Math.round(1 + (x / rect.width) * 9)));
+  };
+
+  const pct = (displayValue - 1) / 9 * 100;
+  const colorPct = displayValue >= 7 ? T.good : displayValue >= 5 ? T.caution : T.bad;
+
   return (
     <div style={{ marginBottom: 18 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
         <span style={{ fontSize: 13, fontWeight: 500 }}>{label}</span>
-        <span className="tns-mono" style={{ fontSize: 14, color: colorPct }}>{value}<span style={{ color: T.textMute, fontSize: 10 }}>/10</span></span>
+        <span className="tns-mono" style={{ fontSize: 14, color: colorPct }}>{displayValue}<span style={{ color: T.textMute, fontSize: 10 }}>/10</span></span>
       </div>
       <div
-        style={{ position: 'relative', height: 4, background: T.surface, cursor: 'pointer' }}
+        ref={trackRef}
+        style={{ position: 'relative', height: 4, background: T.surface, cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
         onClick={(e) => {
+          if (didDrag.current) { didDrag.current = false; return; }
           const rect = e.currentTarget.getBoundingClientRect();
           const x = e.clientX - rect.left;
           const newVal = Math.round(1 + (x / rect.width) * 9);
-          onChange(Math.max(1, Math.min(10, newVal)));
+          const clamped = Math.max(1, Math.min(10, newVal));
+          setDisplayValue(clamped);
+          onChangeRef.current(clamped);
+        }}
+        onMouseDown={(e) => {
+          draggingRef.current = true;
+          didDrag.current = false;
+          setDisplayValue(computeValue(e.clientX));
+
+          const handleMove = (ev: MouseEvent) => {
+            didDrag.current = true;
+            setDisplayValue(computeValue(ev.clientX));
+          };
+          const handleUp = () => {
+            draggingRef.current = false;
+            window.removeEventListener('mousemove', handleMove);
+            window.removeEventListener('mouseup', handleUp);
+            setDisplayValue(prev => {
+              onChangeRef.current(prev);
+              return prev;
+            });
+          };
+          window.addEventListener('mousemove', handleMove);
+          window.addEventListener('mouseup', handleUp);
+        }}
+        onTouchStart={(e) => {
+          if (e.touches.length === 0) return;
+          draggingRef.current = true;
+          didDrag.current = false;
+          setDisplayValue(computeValue(e.touches[0].clientX));
+
+          const handleMove = (ev: TouchEvent) => {
+            if (ev.touches.length === 0) return;
+            didDrag.current = true;
+            setDisplayValue(computeValue(ev.touches[0].clientX));
+          };
+          const handleEnd = () => {
+            draggingRef.current = false;
+            window.removeEventListener('touchmove', handleMove);
+            window.removeEventListener('touchend', handleEnd);
+            window.removeEventListener('touchcancel', handleEnd);
+            setDisplayValue(prev => {
+              onChangeRef.current(prev);
+              return prev;
+            });
+          };
+          window.addEventListener('touchmove', handleMove);
+          window.addEventListener('touchend', handleEnd);
+          window.addEventListener('touchcancel', handleEnd);
         }}
       >
         <div style={{ position: 'absolute', inset: 0, width: pct + '%', background: colorPct }} />
@@ -88,13 +157,31 @@ export default function Wellness() {
         <WellnessSlider label="Motivation" value={motivation} low="POOR" high="HIGH" onChange={setMotivation} />
         <WellnessSlider label="Non-training stress" value={stress} low="EXTREME" high="NONE" onChange={setStress} />
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', border: `1px solid ${T.line}`, marginTop: 10 }}>
-          <div>
-            <div className="tns-eyebrow" style={{ marginBottom: 4 }}>HRV · 7-day</div>
-            <div className="tns-mono" style={{ fontSize: 13 }}>62 ms<span style={{ color: T.bad, marginLeft: 8 }}>−4.2%</span></div>
-          </div>
-          <Spark data={[64, 63, 62, 62, 61, 62, 62]} color={T.caution} w={70} h={22} />
-        </div>
+        {/* HRV estimate derived from wellness composite */}
+        {(() => {
+          const wellnessComposite = (sleepQuality + overallFatigue + muscleSoreness + motivation + stress) / 5;
+          const baseHrv = 62;
+          const hrvDelta = Math.round((wellnessComposite - 6.5) * 1.5);
+          const currentHrv = baseHrv + hrvDelta;
+          const hrvSpark = Array.from({ length: 7 }, (_, i) => {
+            const dayOffset = (6 - i) * 0.5;
+            const jitter = Math.sin(i * 2.5) * 1.2;
+            return Math.max(50, Math.min(75, Math.round(currentHrv + dayOffset + jitter)));
+          });
+          const prevAvg = hrvSpark.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
+          const currAvg = hrvSpark.slice(-3).reduce((a, b) => a + b, 0) / 3;
+          const pctChange = prevAvg > 0 ? ((currAvg - prevAvg) / prevAvg) * 100 : 0;
+          const changeColor = pctChange >= -2 ? T.good : pctChange >= -5 ? T.caution : T.bad;
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', border: `1px solid ${T.line}`, marginTop: 10 }}>
+              <div>
+                <div className="tns-eyebrow" style={{ marginBottom: 4 }}>HRV · estimated</div>
+                <div className="tns-mono" style={{ fontSize: 13 }}>{currentHrv} ms<span style={{ color: changeColor, marginLeft: 8 }}>{pctChange >= 0 ? '+' : ''}{pctChange.toFixed(1)}%</span></div>
+              </div>
+              <Spark data={hrvSpark} color={changeColor} w={70} h={22} />
+            </div>
+          );
+        })()}
       </div>
       <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}` }}>
         <PrimaryBtn onClick={handleCompute}>Compute readiness →</PrimaryBtn>

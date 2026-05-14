@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
-import { ensembleE1RM, getRpePct, calculateSetSFI } from '../../engine';
+import { ensembleE1RM, calculateE1RM, getRpePct, calculateSetSFI } from '../../engine';
 import { T, Phone, PrimaryBtn } from '../../shared';
 import type { SetLog } from '../../store';
 
@@ -29,10 +29,11 @@ export default function TopSet() {
   const profile = useStore(s => s.profile);
   const logSet = useStore(s => s.logSet);
 
-  const ex = currentSession?.exercises?.[0];
+  const ex = currentSession?.exercises?.[currentSession?.currentExerciseIndex || 0];
 
   const [load, setLoad] = useState(() => {
     if (!ex) return 0;
+    if (ex.prescribedLoad != null) return ex.prescribedLoad;
     const liftKey = ex.id === 'barbell_back_squat' ? 'squat' : ex.id === 'bench_press' ? 'bench' : ex.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
     const pct = getRpePct(ex.reps, ex.rpeTarget);
     const e1rmVal = profile.e1rm[liftKey] || 200;
@@ -79,13 +80,17 @@ export default function TopSet() {
   const liftKey = ex.id === 'barbell_back_squat' ? 'squat' : ex.id === 'bench_press' ? 'bench' : ex.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
   const pct = getRpePct(ex.reps, ex.rpeTarget);
   const e1rmVal = profile.e1rm[liftKey] || 200;
-  const prescribedLoad = Math.round(e1rmVal * pct / 2.5) * 2.5;
+  const prescribedLoad = ex.prescribedLoad ?? Math.round(e1rmVal * pct / 2.5) * 2.5;
 
   const rolling = profile.rollingE1rm[liftKey] || 200;
   const e1rmResult = ensembleE1RM({ load, reps, rpe }, profile.rpeTable, profile.rpeCalibration, rolling, 0.3);
   const e1rmDiff = ((e1rmResult.session - rolling) / rolling * 100).toFixed(1);
 
-  const topSetsDone = currentSession.sets.filter(s => s.setType === 'TOP_SET').length;
+  // Individual method breakdown for transparency
+  const methodBreakdown = calculateE1RM({ load, reps, rpe }, profile.rpeTable, profile.rpeCalibration);
+
+  const currentExId = currentSession.exercises[currentSession.currentExerciseIndex || 0]?.id;
+  const topSetsDone = currentSession.sets.filter(s => s.setType === 'TOP_SET' && s.exerciseId === currentExId).length;
   const currentSetNum = topSetsDone + 1;
 
   const handleLogSet = () => {
@@ -168,6 +173,26 @@ export default function TopSet() {
             <span className="tns-mono" style={{ fontSize: 10, color: Number(e1rmDiff) > 0 ? T.good : T.bad, marginLeft: 'auto' }}>
               {Number(e1rmDiff) > 0 ? '+' : ''}{e1rmDiff}%
             </span>
+          </div>
+          {/* Method breakdown */}
+          <div style={{ display: 'flex', gap: 12, marginTop: 10, paddingTop: 8, borderTop: `1px solid ${T.lineSoft}` }}>
+            <div style={{ flex: 1 }}>
+              <div className="tns-eyebrow" style={{ fontSize: 7.5, marginBottom: 2 }}>REP-BASED</div>
+              <span className="tns-mono" style={{ fontSize: 12, color: T.textDim }}>{methodBreakdown.repE1RM.toFixed(1)}</span>
+              <span className="tns-mono" style={{ fontSize: 8, color: T.textMute, marginLeft: 3 }}>· {(methodBreakdown.repConfidence * 100).toFixed(0)}%</span>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div className="tns-eyebrow" style={{ fontSize: 7.5, marginBottom: 2 }}>RPE-ADJ</div>
+              <span className="tns-mono" style={{ fontSize: 12, color: T.textDim }}>{methodBreakdown.rpeE1RM.toFixed(1)}</span>
+              <span className="tns-mono" style={{ fontSize: 8, color: T.textMute, marginLeft: 3 }}>· {(methodBreakdown.rpeConfidence * 100).toFixed(0)}%</span>
+            </div>
+            {methodBreakdown.vbtE1RM !== undefined && (
+              <div style={{ flex: 1 }}>
+                <div className="tns-eyebrow" style={{ fontSize: 7.5, marginBottom: 2 }}>VBT</div>
+                <span className="tns-mono" style={{ fontSize: 12, color: T.textDim }}>{methodBreakdown.vbtE1RM.toFixed(1)}</span>
+                <span className="tns-mono" style={{ fontSize: 8, color: T.textMute, marginLeft: 3 }}>· {((methodBreakdown.vbtConfidence ?? 0) * 100).toFixed(0)}%</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

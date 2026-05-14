@@ -1,24 +1,36 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Phone, AppHeader, TabBar, T } from '../../shared';
-
-const phases = [
-  { l: 'Development', wk: '8 wk', start: 'NOW', col: T.accent, w: 40 },
-  { l: 'Pivot', wk: '3 wk', col: T.caution, w: 15 },
-  { l: 'Realisation', wk: '2 wk', col: T.text, w: 10 },
-  { l: 'Taper', wk: '3 d', col: T.textDim, w: 5 },
-  { l: 'MEET', wk: 'Sep 14', col: T.accent, w: 4, terminal: true },
-];
+import { generatePeakingPlan } from '../../engine';
+import { useStore } from '../../store';
 
 const phaseColors = [T.accent, T.caution, T.text, T.textDim, T.accent];
 const phaseLabels = ['DEV', 'PIV', 'REAL', 'TPR', '★'];
 
 export default function Peaking() {
   const navigate = useNavigate();
+  const profile = useStore((s) => s.profile);
+
+  const meetDate = new Date(profile.meetDate || '2026-09-14');
+  const plan = generatePeakingPlan(meetDate, profile.ttpEstimate);
+  const devWeeks = Math.round((plan.pivotStart.getTime() - plan.developmentStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
+  const pivotWeeks = Math.round((plan.realisationStart.getTime() - plan.pivotStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
+  const realWeeks = Math.round((plan.taperStart.getTime() - plan.realisationStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
+  const taperDays = Math.round((plan.meetDate.getTime() - plan.taperStart.getTime()) / (24 * 60 * 60 * 1000));
+  const totalWeeks = Math.ceil((plan.meetDate.getTime() - plan.developmentStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
+  const daysToMeet = Math.max(0, Math.floor((plan.meetDate.getTime() - new Date().getTime()) / (24 * 60 * 60 * 1000)));
+
+  const phases = [
+    { l: 'Development', wk: `${devWeeks} wk`, start: 'NOW', col: T.accent, w: devWeeks },
+    { l: 'Pivot', wk: `${pivotWeeks} wk`, col: T.caution, w: pivotWeeks },
+    { l: 'Realisation', wk: `${realWeeks} wk`, col: T.text, w: realWeeks },
+    { l: 'Taper', wk: `${taperDays} d`, col: T.textDim, w: Math.max(1, Math.round(taperDays / 7)) },
+    { l: 'MEET', wk: `${plan.meetDate.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })}`, col: T.accent, w: 2, terminal: true },
+  ];
 
   return (
     <Phone>
-      <AppHeader eyebrow="Peaking · 18 weeks out" title="Path to Sep 14" back />
+      <AppHeader eyebrow={`Peaking · ${totalWeeks} weeks out`} title={`Path to ${meetDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`} back onBack={() => navigate('/meet/setup')} />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
         {/* Countdown */}
         <div
@@ -36,7 +48,7 @@ export default function Peaking() {
               Days to meet
             </div>
             <span className="tns-serif" style={{ fontSize: 72, lineHeight: 0.85 }}>
-              123
+               {daysToMeet}
             </span>
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -44,7 +56,7 @@ export default function Peaking() {
               Projected total
             </div>
             <span className="tns-serif" style={{ fontSize: 32, color: T.accent }}>
-              620
+              {Math.round((profile.e1rm.squat + profile.e1rm.bench + profile.e1rm.deadlift) * 1.02)}
             </span>
             <span className="tns-mono" style={{ fontSize: 10, color: T.textMute, marginLeft: 4 }}>
               KG
@@ -104,9 +116,8 @@ export default function Peaking() {
           Week-by-week
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 3, marginBottom: 14 }}>
-          {Array.from({ length: 18 }).map((_, i) => {
-            const phase =
-              i < 8 ? 0 : i < 13 ? 1 : i < 15 ? 2 : i < 17 ? 3 : 4;
+          {Array.from({ length: totalWeeks }).map((_, i) => {
+            const phase = i < devWeeks ? 0 : i < devWeeks + pivotWeeks ? 1 : i < devWeeks + pivotWeeks + realWeeks ? 2 : 3;
             return (
               <div
                 key={i}
@@ -154,8 +165,17 @@ export default function Peaking() {
             borderLeft: `2px solid ${T.accent}`,
           }}
         >
-          <span style={{ color: T.text }}>Now · Development.</span> Push your squat e1RM ≥ 230 kg over 8 weeks (TTP
+          <span style={{ color: T.text }}>Now · Development.</span> Push your squat e1RM ≥ {profile.e1rm.squat} kg over {devWeeks} weeks (TTP
           est. 6 wk). Pivot begins automatically after peak detection.
+        </div>
+
+        {/* Link to Attempts */}
+        <div style={{ marginTop: 18, padding: '14px 16px', border: `1px solid ${T.line}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => navigate('/meet/attempts')}>
+          <div>
+            <div className="tns-eyebrow" style={{ marginBottom: 4 }}>Meet day</div>
+            <div style={{ fontSize: 13, color: T.textDim }}>View recommended openers, seconds, thirds</div>
+          </div>
+          <span style={{ color: T.accent, fontSize: 18 }}>›</span>
         </div>
       </div>
       <TabBar
@@ -163,6 +183,7 @@ export default function Peaking() {
         onNavigate={(id) => {
           if (id === 'today') navigate('/');
           else if (id === 'block') navigate('/block/performance');
+          else if (id === 'lifts') navigate('/lifts');
           else if (id === 'meet') navigate('/meet/setup');
           else navigate('/');
         }}

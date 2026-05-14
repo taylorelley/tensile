@@ -46,7 +46,8 @@ export default function DropProtocol() {
     );
   }
 
-  const topSets = currentSession.sets.filter(s => s.setType === 'TOP_SET');
+  const currentExId = currentSession.exercises[currentSession.currentExerciseIndex || 0]?.id;
+  const topSets = currentSession.sets.filter(s => s.setType === 'TOP_SET' && s.exerciseId === currentExId);
   const topSet = topSets[topSets.length - 1];
 
   if (!topSet) {
@@ -71,12 +72,12 @@ export default function DropProtocol() {
 
   const backOffLoad = Math.round(topSet.actualLoad * (1 - getBackOffDrop(block.phase)) / 2.5) * 2.5;
   const stopRpe = topSet.prescribedRpeTarget;
-  const backOffSetsDone = currentSession.sets.filter(s => s.setType === 'BACK_OFF').length;
+  const backOffSetsDone = currentSession.sets.filter(s => s.setType === 'BACK_OFF' && s.exerciseId === currentExId).length;
   const currentSetNum = backOffSetsDone + 1;
 
   const isTerminating = rpe >= stopRpe;
 
-  const lastBackOff = currentSession.sets.filter(s => s.setType === 'BACK_OFF').slice(-1)[0];
+  const lastBackOff = currentSession.sets.filter(s => s.setType === 'BACK_OFF' && s.exerciseId === currentExId).slice(-1)[0];
   const previousRpe = lastBackOff?.actualRpe;
 
   const exerciseLabel = topSet.exerciseId === 'barbell_back_squat' ? 'Back squat' : topSet.exerciseId === 'bench_press' ? 'Bench press' : 'Deadlift';
@@ -155,7 +156,7 @@ export default function DropProtocol() {
         </div>
       </div>
       <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}`, display: 'flex', gap: 8 }}>
-        <PrimaryBtn dim full={false}>+ Set</PrimaryBtn>
+        <PrimaryBtn dim full={false} onClick={handleLogSet}>+ Set</PrimaryBtn>
         <PrimaryBtn onClick={handleLogSet}>{isTerminating ? 'Finish →' : 'Log set →'}</PrimaryBtn>
       </div>
     </Phone>

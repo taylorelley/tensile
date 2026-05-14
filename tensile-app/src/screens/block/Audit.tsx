@@ -82,10 +82,18 @@ export default function Audit() {
           alignItems: 'center',
         }}
       >
+        <div
+          className="tns-mono"
+          style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }}
+          onClick={() => navigate('/block/weakpoint')}
+        >
+          ‹ 4 / 6
+        </div>
         <div className="tns-eyebrow">{blockLabel}</div>
         <div
           className="tns-mono"
-          style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}
+          style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }}
+          onClick={() => navigate('/block/next')}
         >
           5 / 6 ›
         </div>
@@ -211,6 +219,7 @@ export default function Audit() {
         onNavigate={(id) => {
           if (id === 'today') navigate('/');
           else if (id === 'block') navigate('/block/performance');
+          else if (id === 'lifts') navigate('/lifts');
           else if (id === 'meet') navigate('/meet/setup');
           else navigate('/');
         }}

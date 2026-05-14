@@ -1,27 +1,35 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Phone, AppHeader, PrimaryBtn, TabBar, T } from '../../shared';
+import { useStore } from '../../store';
 
-const federations: [string, boolean][] = [
-  ['IPF', true],
-  ['USAPL', false],
-  ['WRPF', false],
-];
-
-const equipmentOptions: [string, boolean][] = [
-  ['Raw', true],
-  ['Wraps', false],
-  ['Equipped', false],
-];
-
+const federationsList = ['IPF', 'USAPL', 'WRPF'];
+const equipmentList = ['Raw', 'Wraps', 'Equipped'];
 const weightClasses = ['74', '83', '93', '105'];
 
 export default function MeetSetup() {
   const navigate = useNavigate();
+  const profile = useStore(s => s.profile);
+  const setProfile = useStore(s => s.setProfile);
+  const [federation, setFederation] = useState('IPF');
+  const [equipment, setEquipment] = useState('Raw');
+  const [weightClass, setWeightClass] = useState('83');
+  const [isEditingDate, setIsEditingDate] = useState(false);
+  const [meetDate, setMeetDateState] = useState(profile.meetDate || '2026-09-14');
+
+  const bodyWeight = profile.bodyWeight ?? 84.5;
+
+  const dateObj = new Date(meetDate + 'T00:00:00');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const year = String(dateObj.getFullYear()).slice(-2);
+  const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  const dayName = dayNames[dateObj.getDay()];
+  const weeksOut = Math.max(0, Math.ceil((dateObj.getTime() - new Date().getTime()) / (7 * 24 * 60 * 60 * 1000)));
 
   return (
     <Phone>
-      <AppHeader eyebrow="Competition · Setup" title="Meet day" back />
+      <AppHeader eyebrow="Competition · Setup" title="Meet day" back onBack={() => navigate('/')} />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
         <div className="tns-eyebrow" style={{ marginBottom: 10 }}>
           Meet date
@@ -34,36 +42,71 @@ export default function MeetSetup() {
             display: 'flex',
             alignItems: 'baseline',
             justifyContent: 'space-between',
+            cursor: 'pointer',
           }}
+          onClick={() => setIsEditingDate(true)}
         >
-          <div>
-            <div className="tns-serif" style={{ fontSize: 46, lineHeight: 0.9 }}>
-              14 · 09 · 26
+          {isEditingDate ? (
+            <input
+              type="date"
+              value={meetDate}
+              onChange={(e) => {
+                const newDate = e.target.value;
+                setMeetDateState(newDate);
+                setProfile({ meetDate: newDate });
+              }}
+              onBlur={() => setIsEditingDate(false)}
+              autoFocus
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: T.text,
+                fontFamily: T.serif,
+                fontSize: 32,
+                outline: 'none',
+                width: '100%',
+              }}
+            />
+          ) : (
+            <div>
+              <div className="tns-serif" style={{ fontSize: 46, lineHeight: 0.9 }}>
+                {day} · {month} · {year}
+              </div>
+              <div
+                className="tns-mono"
+                style={{ fontSize: 11, color: T.textMute, marginTop: 6, letterSpacing: '0.06em' }}
+              >
+                {dayName} · {weeksOut} WEEKS OUT
+              </div>
             </div>
-            <div
-              className="tns-mono"
-              style={{ fontSize: 11, color: T.textMute, marginTop: 6, letterSpacing: '0.06em' }}
-            >
-              SAT · 18 WEEKS OUT
-            </div>
-          </div>
-          <span style={{ color: T.accent, fontSize: 22 }}>✎</span>
+          )}
+          <span
+            style={{ color: T.accent, fontSize: 22, cursor: 'pointer' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsEditingDate(true);
+            }}
+          >
+            ✎
+          </span>
         </div>
 
         <div className="tns-eyebrow" style={{ marginBottom: 10 }}>
           Federation
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 18 }}>
-          {federations.map(([l, s]) => (
+          {federationsList.map((l) => (
             <div
               key={l}
+              onClick={() => setFederation(l)}
               style={{
-                border: `1px solid ${s ? T.accent : T.line}`,
-                background: s ? 'rgba(255,110,58,0.06)' : 'transparent',
+                border: `1px solid ${federation === l ? T.accent : T.line}`,
+                background: federation === l ? 'rgba(255,110,58,0.06)' : 'transparent',
                 padding: '12px 0',
                 textAlign: 'center',
                 fontFamily: T.mono,
                 fontSize: 12,
+                cursor: 'pointer',
               }}
             >
               {l}
@@ -84,14 +127,14 @@ export default function MeetSetup() {
             }}
           >
             <span className="tns-mono" style={{ fontSize: 18 }}>
-              83 kg
+              {weightClass} kg
             </span>
             <span className="tns-mono" style={{ fontSize: 11, color: T.textMute, letterSpacing: '0.06em' }}>
-              CURRENT 84.5
+              CURRENT {bodyWeight}
             </span>
           </div>
           <div style={{ height: 4, background: T.surface, position: 'relative' }}>
-            <div style={{ position: 'absolute', inset: 0, width: '60%', background: T.accent }} />
+            <div style={{ position: 'absolute', inset: 0, width: `${(weightClasses.indexOf(weightClass) + 1) * 25}%`, background: T.accent }} />
             <div style={{ position: 'absolute', left: '62%', top: -4, width: 2, height: 12, background: T.caution }} />
           </div>
           <div
@@ -105,28 +148,30 @@ export default function MeetSetup() {
             }}
           >
             {weightClasses.map((wc) => (
-              <span key={wc}>{wc}</span>
+              <span key={wc} onClick={() => setWeightClass(wc)} style={{ cursor: 'pointer', color: weightClass === wc ? T.text : T.textMute }}>{wc}</span>
             ))}
           </div>
         </div>
         <div style={{ fontSize: 11.5, color: T.textDim, lineHeight: 1.5, marginBottom: 22 }}>
-          Cut <span className="tns-mono">1.5 kg</span> by meet day — within passive water-cut range.
+          Cut <span className="tns-mono">{Math.max(0, bodyWeight - Number(weightClass)).toFixed(1)} kg</span> by meet day — within passive water-cut range.
         </div>
 
         <div className="tns-eyebrow" style={{ marginBottom: 10 }}>
           Equipment
         </div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
-          {equipmentOptions.map(([l, s]) => (
+          {equipmentList.map((l) => (
             <div
               key={l}
+              onClick={() => setEquipment(l)}
               style={{
                 flex: 1,
-                border: `1px solid ${s ? T.accent : T.line}`,
-                background: s ? 'rgba(255,110,58,0.06)' : 'transparent',
+                border: `1px solid ${equipment === l ? T.accent : T.line}`,
+                background: equipment === l ? 'rgba(255,110,58,0.06)' : 'transparent',
                 padding: '11px 0',
                 textAlign: 'center',
                 fontSize: 12,
+                cursor: 'pointer',
               }}
             >
               {l}
@@ -135,13 +180,14 @@ export default function MeetSetup() {
         </div>
       </div>
       <div style={{ padding: '14px 22px 0', borderTop: `1px solid ${T.lineSoft}` }}>
-        <PrimaryBtn>Generate peaking plan →</PrimaryBtn>
+        <PrimaryBtn onClick={() => { setProfile({ meetDate }); navigate('/meet/peaking'); }}>Generate peaking plan →</PrimaryBtn>
       </div>
       <TabBar
         active="meet"
         onNavigate={(id) => {
           if (id === 'today') navigate('/');
           else if (id === 'block') navigate('/block/performance');
+          else if (id === 'lifts') navigate('/lifts');
           else if (id === 'meet') navigate('/meet/setup');
           else navigate('/');
         }}

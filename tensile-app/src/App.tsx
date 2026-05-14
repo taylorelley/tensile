@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { useStore } from './store';
 
 // Onboarding
@@ -40,6 +41,17 @@ import Attempts from './screens/meet/Attempts';
 
 function App() {
   const onboardingComplete = useStore(s => s.onboardingComplete);
+  const currentBlock = useStore(s => s.currentBlock);
+  const setCurrentSession = useStore(s => s.setCurrentSession);
+
+  // Restore in-progress session on mount (currentSession is not persisted)
+  useEffect(() => {
+    if (!currentBlock) return;
+    const inProgress = currentBlock.sessions.find(s => s.status === 'IN_PROGRESS');
+    if (inProgress) {
+      setCurrentSession(inProgress);
+    }
+  }, [currentBlock, setCurrentSession]);
 
   return (
     <Routes>
@@ -48,10 +60,10 @@ function App() {
           <Route path="/" element={<Welcome />} />
           <Route path="/onboarding/biometrics" element={<Biometrics />} />
           <Route path="/onboarding/baselines" element={<Baselines />} />
-          <Route path="/onboarding/weakpoint" element={<WeakPoint />} />
+          <Route path="/onboarding/weak-point" element={<WeakPoint />} />
           <Route path="/onboarding/history" element={<History />} />
           <Route path="/onboarding/schedule" element={<Schedule />} />
-          <Route path="/onboarding/firstblock" element={<FirstBlock />} />
+          <Route path="/onboarding/first-block" element={<FirstBlock />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </>
       ) : (
@@ -64,6 +76,7 @@ function App() {
           <Route path="/session/drop" element={<DropProtocol />} />
           <Route path="/session/summary" element={<Summary />} />
           <Route path="/session/override" element={<Override />} />
+          <Route path="/lifts" element={<Performance />} />
           <Route path="/block/performance" element={<Performance />} />
           <Route path="/block/volume" element={<Volume />} />
           <Route path="/block/readiness" element={<Readiness />} />

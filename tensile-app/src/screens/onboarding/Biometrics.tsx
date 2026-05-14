@@ -91,6 +91,10 @@ export default function Biometrics() {
   const [height, setHeight] = useState(profile.height ?? 0);
   const [trainingAge, setTrainingAge] = useState(profile.trainingAge);
   const [primaryGoal, setPrimaryGoal] = useState(profile.primaryGoal);
+  const [squatStance, setSquatStance] = useState(profile.squatStance);
+  const [deadliftStance, setDeadliftStance] = useState(profile.deadliftStance);
+  const [belt, setBelt] = useState(profile.belt);
+  const [kneeSleeves, setKneeSleeves] = useState(profile.kneeSleeves);
 
   const handleContinue = () => {
     setProfile({
@@ -100,6 +104,10 @@ export default function Biometrics() {
       height,
       trainingAge,
       primaryGoal,
+      squatStance,
+      deadliftStance,
+      belt,
+      kneeSleeves,
     });
     navigate('/onboarding/baselines');
   };
@@ -146,6 +154,32 @@ export default function Biometrics() {
           }}>{g}</div>
         ))}
       </div>
+
+      <div className="tns-eyebrow" style={{ marginTop: 18, marginBottom: 10 }}>Squat stance</div>
+      {['Narrow', 'Moderate', 'Wide'].map(s => (
+        <Choice key={s} label={s} selected={squatStance === s.toLowerCase()} onClick={() => setSquatStance(s.toLowerCase())} />
+      ))}
+
+      <div className="tns-eyebrow" style={{ marginTop: 18, marginBottom: 10 }}>Deadlift stance</div>
+      {['Conventional', 'Sumo', 'Mixed'].map(s => (
+        <Choice key={s} label={s} selected={deadliftStance === s.toLowerCase()} onClick={() => setDeadliftStance(s.toLowerCase())} />
+      ))}
+
+      <div className="tns-eyebrow" style={{ marginTop: 18, marginBottom: 10 }}>Belt</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
+        {[true, false].map(v => (
+          <div key={String(v)} onClick={() => setBelt(v)} style={{
+            border: `1px solid ${belt === v ? T.accent : T.line}`,
+            background: belt === v ? 'rgba(255,110,58,0.06)' : 'transparent',
+            padding: '12px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', textAlign: 'center',
+          }}>{v ? 'Yes' : 'No'}</div>
+        ))}
+      </div>
+
+      <div className="tns-eyebrow" style={{ marginTop: 18, marginBottom: 10 }}>Knee sleeves</div>
+      {['Raw', 'Sleeves', 'Wraps'].map(s => (
+        <Choice key={s} label={s} selected={kneeSleeves === s.toLowerCase()} onClick={() => setKneeSleeves(s.toLowerCase())} />
+      ))}
     </OBShell>
   );
 }

@@ -39,6 +39,7 @@ export default function Schedule() {
 
   const [availableDays, setAvailableDays] = useState<boolean[]>(profile.availableDays);
   const [sessionDuration, setSessionDuration] = useState(profile.sessionDuration);
+  const [excludedExercises, setExcludedExercises] = useState<string[]>(profile.excludedExercises || []);
 
   const trainingFrequency = availableDays.filter(Boolean).length;
 
@@ -50,8 +51,14 @@ export default function Schedule() {
     });
   };
 
+  const toggleExcluded = (name: string) => {
+    setExcludedExercises(prev =>
+      prev.includes(name) ? prev.filter(e => e !== name) : [...prev, name]
+    );
+  };
+
   const handleContinue = () => {
-    setProfile({ availableDays, trainingFrequency, sessionDuration });
+    setProfile({ availableDays, trainingFrequency, sessionDuration, excludedExercises });
     navigate('/onboarding/first-block');
   };
 
@@ -100,20 +107,24 @@ export default function Schedule() {
       <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Exclude exercises</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {([
-          ['Conventional DL', true] as const,
-          ['Overhead press', false] as const,
-          ['Behind-neck press', true] as const,
-          ['Box squat', false] as const,
-          ['Snatch-grip DL', false] as const,
-        ]).map(([l, x]) => (
-          <div key={l} style={{
-            border: `1px solid ${x ? T.bad : T.line}`,
-            color: x ? T.bad : T.textDim,
-            padding: '6px 12px', fontSize: 11.5,
-            fontFamily: T.mono, letterSpacing: '0.02em',
-            textDecoration: x ? 'line-through' : 'none',
-          }}>{l}</div>
-        ))}
+          'Conventional DL',
+          'Overhead press',
+          'Behind-neck press',
+          'Box squat',
+          'Snatch-grip DL',
+        ]).map((l) => {
+          const x = excludedExercises.includes(l);
+          return (
+            <div key={l} onClick={() => toggleExcluded(l)} style={{
+              border: `1px solid ${x ? T.bad : T.line}`,
+              color: x ? T.bad : T.textDim,
+              padding: '6px 12px', fontSize: 11.5,
+              fontFamily: T.mono, letterSpacing: '0.02em',
+              textDecoration: x ? 'line-through' : 'none',
+              cursor: 'pointer',
+            }}>{l}</div>
+          );
+        })}
       </div>
       <div style={{ marginTop: 8, fontSize: 11, color: T.textMute, fontFamily: T.mono, letterSpacing: '0.04em' }}>
         + ADD EXCLUSION

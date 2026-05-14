@@ -50,7 +50,7 @@ export default function FirstBlock() {
       title="Your first Development Block."
       footer={
         <div style={{ display: 'flex', gap: 8 }}>
-          <PrimaryBtn dim full={false} onClick={() => navigate('/onboarding/first-block')}>Customise</PrimaryBtn>
+          <PrimaryBtn dim full={false} onClick={() => navigate('/onboarding/schedule')}>Customise</PrimaryBtn>
           <PrimaryBtn onClick={handleLockIn}>Lock in →</PrimaryBtn>
         </div>
       }
@@ -77,13 +77,29 @@ export default function FirstBlock() {
 
       <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Microcycle template</div>
       <div style={{ border: `1px solid ${T.line}` }}>
-        {[
-          { d: 'MON', t: 'SQUAT', sub: 'Comp · 3×3 @ RPE 8.5 + back-off', tag: 'PRIMARY' },
-          { d: 'WED', t: 'BENCH', sub: 'Comp · 4×4 @ RPE 8.0 + back-off', tag: 'PRIMARY' },
-          { d: 'FRI', t: 'DEADLIFT', sub: 'Comp · 3×2 @ RPE 8.5', tag: 'PRIMARY' },
-          { d: 'SAT', t: 'BENCH (variation)', sub: 'CG bench · 4×5 @ RPE 7.5', tag: 'ASSIST' },
-        ].map((s, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '12px 14px', borderBottom: i < 3 ? `1px solid ${T.lineSoft}` : 'none', gap: 12 }}>
+        {(() => {
+          const dayNames = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+          const dayMap = ['Squat', 'Rest', 'Bench', 'Rest', 'Deadlift', 'Bench (variation)', 'Rest'];
+          const tagMap = ['PRIMARY', '—', 'PRIMARY', '—', 'PRIMARY', 'ASSIST', '—'];
+          const subMap = [
+            'Comp · 3×3 @ RPE 8.5 + back-off',
+            '—',
+            'Comp · 4×4 @ RPE 8.0 + back-off',
+            '—',
+            'Comp · 3×2 @ RPE 8.5',
+            'CG bench · 4×5 @ RPE 7.5',
+            '—'
+          ];
+          const available = profile.availableDays ?? [true, false, true, false, true, true, false];
+          return dayNames
+            .map((d, i) => ({ d, t: dayMap[i], sub: subMap[i], tag: tagMap[i], available: available[i] }))
+            .filter(s => s.available)
+            .map((s, i) => ({
+              ...s,
+              t: s.t.toUpperCase(),
+            }));
+        })().map((s, i, arr) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '12px 14px', borderBottom: i < arr.length - 1 ? `1px solid ${T.lineSoft}` : 'none', gap: 12 }}>
             <span className="tns-mono" style={{ fontSize: 10, color: T.textMute, width: 26, letterSpacing: '0.06em' }}>{s.d}</span>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13.5, fontWeight: 500 }}>{s.t}</div>

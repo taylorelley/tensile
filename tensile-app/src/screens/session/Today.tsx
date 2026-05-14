@@ -12,6 +12,7 @@ export default function Today() {
   const block = useStore(s => s.currentBlock);
   const profile = useStore(s => s.profile);
   const startSession = useStore(s => s.startSession);
+  const updateSession = useStore(s => s.updateSession);
   const generateFirstBlock = useStore(s => s.generateFirstBlock);
 
   const today = new Date().toISOString().split('T')[0];
@@ -30,7 +31,7 @@ export default function Today() {
           </div>
           <PrimaryBtn onClick={generateFirstBlock}>Generate first block →</PrimaryBtn>
         </div>
-        <TabBar active="today" onNavigate={(id) => navigate(id === 'today' ? '/' : id === 'block' ? '/block/performance' : id === 'meet' ? '/meet/setup' : '/')} />
+        <TabBar active="today" onNavigate={(id) => navigate(id === 'today' ? '/' : id === 'block' ? '/block/performance' : id === 'lifts' ? '/lifts' : id === 'meet' ? '/meet/setup' : '/')} />
       </Phone>
     );
   }
@@ -46,7 +47,7 @@ export default function Today() {
         <AppHeader
           eyebrow={getDayName(today)}
           title="Today"
-          right={<div style={{ width: 28, height: 28, border: `1px solid ${T.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.mono, fontSize: 11 }}>MK</div>}
+          right={<div style={{ width: 28, height: 28, border: `1px solid ${T.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.mono, fontSize: 11 }}>{profile.sex ? profile.sex[0] : 'U'}</div>}
         />
         <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ textAlign: 'center' }}>
@@ -54,7 +55,7 @@ export default function Today() {
             <div style={{ fontSize: 13, color: T.textDim, lineHeight: 1.55 }}>No session scheduled for today.</div>
           </div>
         </div>
-        <TabBar active="today" onNavigate={(id) => navigate(id === 'today' ? '/' : id === 'block' ? '/block/performance' : id === 'meet' ? '/meet/setup' : '/')} />
+        <TabBar active="today" onNavigate={(id) => navigate(id === 'today' ? '/' : id === 'block' ? '/block/performance' : id === 'lifts' ? '/lifts' : id === 'meet' ? '/meet/setup' : '/')} />
       </Phone>
     );
   }
@@ -62,10 +63,90 @@ export default function Today() {
   const focus = session.exercises[0]?.name || 'Session';
   const exercises = session.exercises;
 
+  // Determine where to resume based on session state
+  function getResumeTarget(s: NonNullable<typeof session>): { label: string; path: string } {
+    // No RCS yet → wellness check not done
+    if (!s.rcs || s.rcs === 0) return { label: 'Begin wellness check →', path: '/session/wellness' };
+    // RCS done but no sets logged → start warmup
+    if (s.sets.length === 0) return { label: 'Resume warm-up →', path: '/session/warmup' };
+    // Has sets — find current exercise and its progress
+    const exIdx = s.currentExerciseIndex ?? 0;
+    const currentEx = s.exercises[exIdx];
+    if (!currentEx) return { label: 'Resume session →', path: '/session/warmup' };
+    const exSets = s.sets.filter(set => set.exerciseId === currentEx.id);
+    const hasTopSet = exSets.some(set => set.setType === 'TOP_SET');
+    const hasBackOff = exSets.some(set => set.setType === 'BACK_OFF');
+    if (!hasTopSet) return { label: 'Resume top set →', path: '/session/topset' };
+    if (hasBackOff) {
+      const lastBackOff = [...exSets].reverse().find(set => set.setType === 'BACK_OFF');
+      if (lastBackOff && lastBackOff.actualRpe >= lastBackOff.prescribedRpeTarget) {
+        // Back-off terminated — move to next exercise or summary
+        const hasNext = exIdx < s.exercises.length - 1;
+        return hasNext
+          ? { label: 'Next exercise →', path: '/session/warmup' }
+          : { label: 'View summary →', path: '/session/summary' };
+      }
+      return { label: 'Continue back-off →', path: '/session/drop' };
+    }
+    // Top set done, no back-off yet
+    return { label: 'Start back-off →', path: '/session/drop' };
+  }
+
+  const resumeTarget = session.status === 'IN_PROGRESS' ? getResumeTarget(session) : null;
+
+  function weeklyBestE1rm(exerciseIds: string[]): number[] {
+    if (!block) return [];
+    const start = new Date(block.startDate).getTime();
+    const weekMap = new Map<number, number[]>();
+    for (const s of block.sessions) {
+      const daysSince = Math.floor(
+        (new Date(s.scheduledDate).getTime() - start) / (1000 * 60 * 60 * 24)
+      );
+      const week = Math.floor(daysSince / 7);
+      const matching = s.sets.filter((set) => exerciseIds.includes(set.exerciseId));
+      if (matching.length > 0) {
+        if (!weekMap.has(week)) weekMap.set(week, []);
+        weekMap.get(week)!.push(Math.max(...matching.map((set) => set.e1rm)));
+      }
+    }
+    if (weekMap.size === 0) return [];
+    const maxWeek = Math.max(...Array.from(weekMap.keys()));
+    return Array.from({ length: maxWeek + 1 }, (_, i) => {
+      const vals = weekMap.get(i);
+      return vals && vals.length > 0 ? Math.max(...vals) : 0;
+    });
+  }
+
+  const squatTrend = weeklyBestE1rm(['barbell_back_squat']);
+  const benchTrend = weeklyBestE1rm(['bench_press']);
+  const deadliftTrend = weeklyBestE1rm(['conventional_deadlift']);
+
+  const defaultSquat = [200, 204, 208, 206, 212, 215, 218];
+  const defaultBench = [140, 141, 143, 142, 144, 144, 144];
+  const defaultDeadlift = [230, 232, 235, 234, 238, 240, 241];
+
+  const sTrend = squatTrend.length > 0 ? squatTrend : defaultSquat.slice(0, Math.max(week, 1));
+  const bTrend = benchTrend.length > 0 ? benchTrend : defaultBench.slice(0, Math.max(week, 1));
+  const dTrend = deadliftTrend.length > 0 ? deadliftTrend : defaultDeadlift.slice(0, Math.max(week, 1));
+
+  const handleSkip = () => {
+    if (block && session) {
+      updateSession(block.id, session.id, { status: 'SKIPPED' as const });
+    }
+  };
+
+  const fmtDelta = (trend: number[]) => {
+    if (trend.length < 2) return '+0.0%';
+    const first = trend[0] || 1;
+    const last = trend[trend.length - 1] || first;
+    const delta = ((last - first) / first) * 100;
+    return `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%`;
+  };
+
   const lifts = [
-    { l: 'Squat', v: profile.e1rm.squat.toFixed(1), d: '+2.1%', s: [200, 204, 208, 206, 212, 215, 218] },
-    { l: 'Bench', v: profile.e1rm.bench.toFixed(1), d: '+0.8%', s: [140, 141, 143, 142, 144, 144, 144] },
-    { l: 'Deadlift', v: profile.e1rm.deadlift.toFixed(1), d: '+3.4%', s: [230, 232, 235, 234, 238, 240, 241] },
+    { l: 'Squat', v: profile.e1rm.squat.toFixed(1), d: fmtDelta(sTrend), s: sTrend.length > 0 ? sTrend : defaultSquat },
+    { l: 'Bench', v: profile.e1rm.bench.toFixed(1), d: fmtDelta(bTrend), s: bTrend.length > 0 ? bTrend : defaultBench },
+    { l: 'Deadlift', v: profile.e1rm.deadlift.toFixed(1), d: fmtDelta(dTrend), s: dTrend.length > 0 ? dTrend : defaultDeadlift },
   ];
 
   return (
@@ -73,7 +154,7 @@ export default function Today() {
       <AppHeader
         eyebrow={`${getDayName(today)} · Week ${week} · ${phase}`}
         title="Today"
-        right={<div style={{ width: 28, height: 28, border: `1px solid ${T.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.mono, fontSize: 11 }}>MK</div>}
+        right={<div style={{ width: 28, height: 28, border: `1px solid ${T.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.mono, fontSize: 11 }}>{profile.sex ? profile.sex[0] : 'U'}</div>}
       />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
         {/* Session card */}
@@ -99,11 +180,22 @@ export default function Today() {
               </div>
             ))}
           </div>
-          <div style={{ padding: '12px 16px', borderTop: `1px solid ${T.lineSoft}`, background: 'rgba(255,110,58,0.04)' }}>
-            <PrimaryBtn onClick={() => {
-              startSession(block.id, session.id);
-              navigate('/session/wellness');
-            }}>Begin wellness check →</PrimaryBtn>
+          <div style={{ padding: '12px 16px', borderTop: `1px solid ${T.lineSoft}`, background: session.status === 'IN_PROGRESS' ? 'rgba(255,110,58,0.08)' : 'rgba(255,110,58,0.04)' }}>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <PrimaryBtn dim full={false} onClick={handleSkip}>Skip →</PrimaryBtn>
+              <PrimaryBtn onClick={() => {
+                startSession(block.id, session.id);
+                navigate(resumeTarget?.path ?? '/session/wellness');
+              }}>{resumeTarget?.label ?? 'Begin wellness check →'}</PrimaryBtn>
+            </div>
+            <div style={{ marginTop: 10, textAlign: 'center' }}>
+              <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => {
+                if (block) {
+                  useStore.getState().updateBlock(block.id, { phase: 'DELOAD' as const });
+                  navigate('/deload/rec');
+                }
+              }}>TRIGGER DELOAD →</span>
+            </div>
           </div>
         </div>
 
@@ -128,17 +220,17 @@ export default function Today() {
         {/* Block progress strip */}
         <div className="tns-eyebrow" style={{ marginBottom: 8 }}>Block progress</div>
         <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
-          {Array.from({ length: 7 }).map((_, i) => (
-            <div key={i} style={{ flex: 1, height: 28, background: i < 2 ? '#26221a' : i === 2 ? T.accent : T.surface, position: 'relative' }}>
-              {i === 2 && <div style={{ position: 'absolute', inset: 0, background: T.accent, opacity: 0.4 }} />}
+          {Array.from({ length: profile.ttpEstimate || 7 }).map((_, i) => (
+            <div key={i} style={{ flex: 1, height: 28, background: i < week - 1 ? '#26221a' : i === week - 1 ? T.accent : T.surface, position: 'relative' }}>
+              {i === week - 1 && <div style={{ position: 'absolute', inset: 0, background: T.accent, opacity: 0.4 }} />}
             </div>
           ))}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: T.mono, fontSize: 9, color: T.textMute, letterSpacing: '0.06em' }}>
-          <span>WK 1</span><span>WK {week} · NOW</span><span>WK 7 · EST PEAK</span>
+          <span>WK 1</span><span>WK {week} · NOW</span><span>WK {profile.ttpEstimate || 7} · EST PEAK</span>
         </div>
       </div>
-      <TabBar active="today" onNavigate={(id) => navigate(id === 'today' ? '/' : id === 'block' ? '/block/performance' : id === 'meet' ? '/meet/setup' : '/')} />
+      <TabBar active="today" onNavigate={(id) => navigate(id === 'today' ? '/' : id === 'block' ? '/block/performance' : id === 'lifts' ? '/lifts' : id === 'meet' ? '/meet/setup' : '/')} />
     </Phone>
   );
 }

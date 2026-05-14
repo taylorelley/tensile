@@ -6,6 +6,9 @@ import { Phone, TabBar, T, PrimaryBtn } from '../../shared';
 export default function NextBlock() {
   const navigate = useNavigate();
   const currentBlock = useStore((s) => s.currentBlock);
+  const updateBlock = useStore((s) => s.updateBlock);
+  const setProfile = useStore((s) => s.setProfile);
+  const profile = useStore((s) => s.profile);
   const generateFirstBlock = useStore((s) => s.generateFirstBlock);
 
   const blockId = currentBlock?.id ?? '—';
@@ -18,6 +21,10 @@ export default function NextBlock() {
     : 'No block';
 
   const handleStartBlock = () => {
+    if (currentBlock) {
+      updateBlock(currentBlock.id, { status: 'COMPLETE' as const, endDate: new Date().toISOString().split('T')[0] });
+      setProfile({ completedBlocks: (profile.completedBlocks || 0) + 1 });
+    }
     generateFirstBlock();
     navigate('/');
   };
@@ -32,6 +39,13 @@ export default function NextBlock() {
           alignItems: 'center',
         }}
       >
+        <div
+          className="tns-mono"
+          style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }}
+          onClick={() => navigate('/block/audit')}
+        >
+          ‹ 5 / 6
+        </div>
         <div className="tns-eyebrow">{blockLabel}</div>
         <div
           className="tns-mono"
@@ -195,7 +209,7 @@ export default function NextBlock() {
           gap: 8,
         }}
       >
-        <PrimaryBtn dim full={false}>
+        <PrimaryBtn dim full={false} onClick={() => navigate('/block/performance')}>
           Customise
         </PrimaryBtn>
         <PrimaryBtn onClick={handleStartBlock}>Start block →</PrimaryBtn>
@@ -205,6 +219,7 @@ export default function NextBlock() {
         onNavigate={(id) => {
           if (id === 'today') navigate('/');
           else if (id === 'block') navigate('/block/performance');
+          else if (id === 'lifts') navigate('/lifts');
           else if (id === 'meet') navigate('/meet/setup');
           else navigate('/');
         }}

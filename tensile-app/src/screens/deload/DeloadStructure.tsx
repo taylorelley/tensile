@@ -1,5 +1,6 @@
 import React from 'react';
-
+import { useNavigate } from 'react-router-dom';
+import { useStore } from '../../store';
 import { Phone, AppHeader, T } from '../../shared';
 
 const options = [
@@ -33,18 +34,32 @@ const options = [
 ];
 
 export default function DeloadStructure() {
+  const navigate = useNavigate();
+  const currentBlock = useStore((s) => s.currentBlock);
+  const updateBlock = useStore((s) => s.updateBlock);
   return (
     <Phone>
-      <AppHeader eyebrow="Deload · Structure" title="Pick a path" back />
+      <AppHeader eyebrow="Deload · Structure" title="Pick a path" back onBack={() => navigate('/deload/rec')} />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
         {options.map((o, i) => (
           <div
             key={i}
+            onClick={() => {
+              if (o.t === 'Active deload' || o.t === 'Complete rest') {
+                if (currentBlock) updateBlock(currentBlock.id, { phase: 'DELOAD' as const, type: 'DELOAD' as const });
+                navigate('/');
+              } else if (o.t === 'Pivot block') {
+                navigate('/deload/pivot');
+              } else {
+                navigate('/');
+              }
+            }}
             style={{
               border: `1px solid ${o.primary ? T.accent : T.line}`,
               background: o.primary ? 'rgba(255,110,58,0.04)' : 'transparent',
               padding: '14px 16px',
               marginBottom: 10,
+              cursor: 'pointer',
             }}
           >
             <div
