@@ -139,7 +139,18 @@ export default function Wellness() {
 
   const handleCompute = () => {
     const wellness = { sleepQuality, overallFatigue, muscleSoreness, motivation, stress };
-    const rcs = calculateRCS(wellness);
+    const completed = block.sessions
+      .filter(s => s.status === 'COMPLETE')
+      .sort((a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime());
+    let rpeDrift = 0;
+    if (completed.length >= 6) {
+      const first3 = completed.slice(0, 3);
+      const last3 = completed.slice(-3);
+      const avgFirst = first3.reduce((sum, s) => sum + (s.srpe ?? 0), 0) / first3.length;
+      const avgLast = last3.reduce((sum, s) => sum + (s.srpe ?? 0), 0) / last3.length;
+      rpeDrift = Math.max(0, avgLast - avgFirst);
+    }
+    const rcs = calculateRCS(wellness, undefined, undefined, rpeDrift);
     updateSession(block.id, currentSession.id, { wellness, rcs });
     navigate('/session/readiness');
   };

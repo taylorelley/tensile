@@ -47,7 +47,7 @@ export function calculateE1RM(
   let vbtConfidence: number | undefined;
   if (set.velocity !== undefined && lvProfile && lvProfile.n >= 10) {
     vbtE1RM = set.load / (lvProfile.slope * set.velocity + lvProfile.intercept);
-    vbtConfidence = Math.min(1.2, 0.8 + (lvProfile.n - 10) * 0.02);
+    vbtConfidence = Math.min(1.0, 0.8 + (lvProfile.n - 10) * 0.02);
   }
 
   return { repE1RM, repConfidence, rpeE1RM, rpeConfidence, vbtE1RM, vbtConfidence };
@@ -174,11 +174,14 @@ export function volumeBudget(
 export function detectPeak(e1rmTrend: number[], minimumTTP: number, blockWeek: number): boolean {
   if (blockWeek < minimumTTP || e1rmTrend.length < 3) return false;
   const n = e1rmTrend.length;
+  const maxVal = Math.max(...e1rmTrend);
+  const maxIdx = e1rmTrend.lastIndexOf(maxVal);
+  // Detect peak after 2 consecutive declining weeks: max is not in the last position,
+  // the last 2 values are declining, and progress was made above the starting value.
   return (
+    maxIdx < n - 1 &&
     e1rmTrend[n - 1] < e1rmTrend[n - 2] &&
-    e1rmTrend[n - 2] < e1rmTrend[n - 3] &&
-    Math.max(...e1rmTrend) > e1rmTrend[0] &&
-    blockWeek >= minimumTTP
+    maxVal > e1rmTrend[0]
   );
 }
 

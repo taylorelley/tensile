@@ -36,6 +36,7 @@ const options = [
 export default function DeloadStructure() {
   const navigate = useNavigate();
   const generateDeloadBlock = useStore((s) => s.generateDeloadBlock);
+  const generateRestBlock = useStore((s) => s.generateRestBlock);
   return (
     <Phone>
       <AppHeader eyebrow="Deload · Structure" title="Pick a path" back onBack={() => navigate('/deload/rec')} />
@@ -50,6 +51,7 @@ export default function DeloadStructure() {
               } else if (o.t === 'Pivot block') {
                 navigate('/deload/pivot');
               } else if (o.t === 'Complete rest') {
+                generateRestBlock();
                 navigate('/');
               } else {
                 navigate('/');

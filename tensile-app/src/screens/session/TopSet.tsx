@@ -34,7 +34,9 @@ export default function TopSet() {
   const [load, setLoad] = useState(() => {
     if (!ex) return 0;
     if (ex.prescribedLoad != null) return ex.prescribedLoad;
-    const liftKey = ex.id === 'barbell_back_squat' ? 'squat' : ex.id === 'bench_press' ? 'bench' : ex.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
+    // Use primary exercise (exercises[0]) as the e1RM base for all exercises in this session
+    const primaryEx = currentSession?.exercises[0];
+    const liftKey = primaryEx?.id === 'barbell_back_squat' ? 'squat' : primaryEx?.id === 'bench_press' ? 'bench' : primaryEx?.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
     const pct = getRpePct(ex.reps, ex.rpeTarget);
     const e1rmVal = profile.e1rm[liftKey] || 200;
     return Math.round(e1rmVal * pct / 2.5) * 2.5;
@@ -75,7 +77,8 @@ export default function TopSet() {
     );
   }
 
-  const liftKey = ex.id === 'barbell_back_squat' ? 'squat' : ex.id === 'bench_press' ? 'bench' : ex.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
+  const primaryEx = currentSession.exercises[0];
+  const liftKey = primaryEx?.id === 'barbell_back_squat' ? 'squat' : primaryEx?.id === 'bench_press' ? 'bench' : primaryEx?.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
   const pct = getRpePct(ex.reps, ex.rpeTarget);
   const e1rmVal = profile.e1rm[liftKey] || 200;
   const prescribedLoad = ex.prescribedLoad ?? Math.round(e1rmVal * pct / 2.5) * 2.5;
@@ -87,7 +90,7 @@ export default function TopSet() {
   // Individual method breakdown for transparency
   const methodBreakdown = calculateE1RM({ load, reps, rpe }, profile.rpeTable, profile.rpeCalibration);
 
-  const currentExId = currentSession.exercises[currentSession.currentExerciseIndex || 0]?.id;
+  const currentExId = ex.id;
   const topSetsDone = currentSession.sets.filter(s => s.setType === 'TOP_SET' && s.exerciseId === currentExId).length;
   const currentSetNum = topSetsDone + 1;
 
