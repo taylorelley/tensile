@@ -11,9 +11,9 @@ export default function MeetSetup() {
   const navigate = useNavigate();
   const profile = useStore(s => s.profile);
   const setProfile = useStore(s => s.setProfile);
-  const [federation, setFederation] = useState('IPF');
-  const [equipment, setEquipment] = useState('Raw');
-  const [weightClass, setWeightClass] = useState('83');
+  const [federation, setFederation] = useState(profile.federation || 'IPF');
+  const [equipment, setEquipment] = useState(profile.equipment || 'Raw');
+  const [weightClass, setWeightClass] = useState(profile.weightClass || '83');
   const [isEditingDate, setIsEditingDate] = useState(false);
   const [meetDate, setMeetDateState] = useState(profile.meetDate || '2026-09-14');
 
@@ -98,7 +98,7 @@ export default function MeetSetup() {
           {federationsList.map((l) => (
             <div
               key={l}
-              onClick={() => setFederation(l)}
+              onClick={() => { setFederation(l); setProfile({ federation: l }); }}
               style={{
                 border: `1px solid ${federation === l ? T.accent : T.line}`,
                 background: federation === l ? 'rgba(255,110,58,0.06)' : 'transparent',
@@ -148,7 +148,7 @@ export default function MeetSetup() {
             }}
           >
             {weightClasses.map((wc) => (
-              <span key={wc} onClick={() => setWeightClass(wc)} style={{ cursor: 'pointer', color: weightClass === wc ? T.text : T.textMute }}>{wc}</span>
+              <span key={wc} onClick={() => { setWeightClass(wc); setProfile({ weightClass: wc }); }} style={{ cursor: 'pointer', color: weightClass === wc ? T.text : T.textMute }}>{wc}</span>
             ))}
           </div>
         </div>
@@ -163,7 +163,7 @@ export default function MeetSetup() {
           {equipmentList.map((l) => (
             <div
               key={l}
-              onClick={() => setEquipment(l)}
+              onClick={() => { setEquipment(l); setProfile({ equipment: l }); }}
               style={{
                 flex: 1,
                 border: `1px solid ${equipment === l ? T.accent : T.line}`,
@@ -180,7 +180,7 @@ export default function MeetSetup() {
         </div>
       </div>
       <div style={{ padding: '14px 22px 0', borderTop: `1px solid ${T.lineSoft}` }}>
-        <PrimaryBtn onClick={() => { setProfile({ meetDate }); navigate('/meet/peaking'); }}>Generate peaking plan →</PrimaryBtn>
+        <PrimaryBtn onClick={() => { setProfile({ meetDate, federation, equipment, weightClass }); navigate('/meet/peaking'); }}>Generate peaking plan →</PrimaryBtn>
       </div>
       <TabBar
         active="meet"

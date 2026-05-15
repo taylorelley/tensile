@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { ensembleE1RM, calculateE1RM, getRpePct, calculateSetSFI } from '../../engine';
@@ -41,8 +41,6 @@ export default function TopSet() {
   });
   const [reps, setReps] = useState(() => ex?.reps ?? 3);
   const [rpe, setRpe] = useState(() => ex?.rpeTarget ?? 8.5);
-  const setCounterRef = useRef(0);
-
   if (!currentSession || !block) {
     return (
       <Phone>
@@ -94,9 +92,8 @@ export default function TopSet() {
   const currentSetNum = topSetsDone + 1;
 
   const handleLogSet = () => {
-    setCounterRef.current += 1;
     const setLog: SetLog = {
-      id: `set-${setCounterRef.current}`,
+      id: `set-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       exerciseId: ex.id,
       setType: 'TOP_SET',
       prescribedLoad,

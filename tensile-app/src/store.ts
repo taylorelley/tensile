@@ -88,6 +88,9 @@ export interface UserProfile {
   ttpEstimate: number;
   ttpHistory: number[];
   meetDate?: string;
+  federation: string;
+  equipment: string;
+  weightClass: string;
   completedBlocks: number;
   rpeCalibration: { sessions: number; mae: number };
   rpeTable: Record<string, number>;
@@ -191,6 +194,9 @@ const defaultProfile: UserProfile = {
   ttpEstimate: 6,
   ttpHistory: [],
   meetDate: '2026-09-14',
+  federation: 'IPF',
+  equipment: 'Raw',
+  weightClass: '83',
   completedBlocks: 0,
   rpeCalibration: { sessions: 0, mae: 1.0 },
   rpeTable: DEFAULT_RPE_TABLE,
@@ -220,6 +226,7 @@ interface AppState {
   logSet: (blockId: string, sessionId: string, set: SetLog) => void;
   completeSession: (blockId: string, sessionId: string, srpe: number) => void;
   generateFirstBlock: () => void;
+  generateNextDevelopmentBlock: () => void;
   generateDeloadBlock: () => void;
   generatePivotBlock: () => void;
 
@@ -286,7 +293,9 @@ export const useStore = create<AppState>()(
       startSession: (blockId, sessionId) => {
         const block = get().blocks.find(b => b.id === blockId);
         const session = block?.sessions.find(s => s.id === sessionId);
-        if (session) set({ currentSession: { ...session, currentExerciseIndex: session.currentExerciseIndex ?? 0 } });
+        if (session && session.status !== 'COMPLETE' && session.status !== 'SKIPPED') {
+          set({ currentSession: { ...session, currentExerciseIndex: session.currentExerciseIndex ?? 0 } });
+        }
       },
 
       logSet: (blockId, sessionId, setLog) => {
@@ -370,6 +379,29 @@ export const useStore = create<AppState>()(
         const profile = get().profile;
         const block = generateBlock(profile);
         set({ blocks: [block], currentBlock: block, currentSession: null });
+      },
+
+      generateNextDevelopmentBlock: () => {
+        const state = get();
+        const profile = state.profile;
+        const block = generateBlock(profile);
+        const prevBlock = state.currentBlock;
+        const updatedBlocks = prevBlock
+          ? state.blocks.map(b =>
+              b.id === prevBlock.id
+                ? { ...b, status: 'COMPLETE' as const, endDate: new Date().toISOString().split('T')[0] }
+                : b
+            )
+          : state.blocks;
+        set({
+          profile: {
+            ...profile,
+            completedBlocks: (profile.completedBlocks || 0) + (prevBlock ? 1 : 0),
+          },
+          blocks: [...updatedBlocks, block],
+          currentBlock: block,
+          currentSession: null,
+        });
       },
 
       generateDeloadBlock: () => {

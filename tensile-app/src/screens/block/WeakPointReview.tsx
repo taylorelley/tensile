@@ -242,9 +242,10 @@ export default function WeakPointReview() {
           }}
         >
           Weak-point targeting drives accessory selection for the next block.
-          {weakPoints.squat
-            ? ` Focus on squat "${weakPoints.squat}" with targeted variations.`
-            : ''}
+          {(['squat', 'bench', 'deadlift'] as const)
+            .filter(lift => weakPoints[lift])
+            .map(lift => ` ${lift.charAt(0).toUpperCase() + lift.slice(1)}: "${weakPoints[lift]}".`)
+            .join('')}
         </div>
       </div>
       <TabBar

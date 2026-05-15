@@ -134,6 +134,7 @@ export function MetricRow({ items }: { items: { label: string; value: string }[]
 }
 
 export function Spark({ data, color = T.accent, w = 80, h = 24, area = true }: { data: number[]; color?: string; w?: number; h?: number; area?: boolean }) {
+  if (!data || data.length === 0) return <svg width={w} height={h} style={{ display: 'block' }} />;
   const min = Math.min(...data), max = Math.max(...data);
   const range = max - min || 1;
   const pts = data.map((v, i) => [
@@ -170,6 +171,7 @@ export function StepDots({ step, total }: { step: number; total: number }) {
 
 // Chart primitives
 export function Chart({ data, w = 320, h = 100, color = T.accent, ticks = 4, peak }: { data: number[]; w?: number; h?: number; color?: string; ticks?: number; peak?: number }) {
+  if (!data || data.length === 0) return <svg width={w} height={h + 18} style={{ display: 'block', overflow: 'visible' }} />;
   const min = Math.min(...data), max = Math.max(...data);
   const pad = (max - min) * 0.15;
   const lo = min - pad, hi = max + pad, range = hi - lo;

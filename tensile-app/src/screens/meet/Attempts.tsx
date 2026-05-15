@@ -149,7 +149,7 @@ export default function Attempts() {
         <PrimaryBtn dim full={false} onClick={() => navigate('/meet/setup')}>
           Edit
         </PrimaryBtn>
-        <PrimaryBtn onClick={() => navigate('/')}>Lock attempts →</PrimaryBtn>
+        <PrimaryBtn onClick={() => navigate('/')}>Back to today →</PrimaryBtn>
       </div>
       <TabBar
         active="meet"

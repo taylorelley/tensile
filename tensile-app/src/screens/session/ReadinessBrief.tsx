@@ -15,7 +15,9 @@ export default function ReadinessBrief() {
   const rcs = currentSession?.rcs || 72;
   const { band, modifier } = rcsBand(rcs);
   const ex = currentSession?.exercises?.[currentSession?.currentExerciseIndex || 0];
-  const liftKey = ex?.id === 'barbell_back_squat' ? 'squat' : ex?.id === 'bench_press' ? 'bench' : ex?.id === 'conventional_deadlift' ? 'deadlift' : 'bench';
+  const liftKey = (ex?.id?.includes('bench') || ex?.id?.includes('press')) ? 'bench'
+    : ex?.id?.includes('deadlift') ? 'deadlift'
+    : 'squat';
   const liftName = liftKey.charAt(0).toUpperCase() + liftKey.slice(1);
   let topLoad = 185;
   let backOffLoad = 163;
@@ -25,9 +27,8 @@ export default function ReadinessBrief() {
   if (ex && block) {
     reps = ex.reps;
     stopRpe = ex.rpeTarget;
-    const liftKeyInner = ex.id === 'barbell_back_squat' ? 'squat' : ex.id === 'bench_press' ? 'bench' : ex.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
     const pct = getRpePct(ex.reps, ex.rpeTarget);
-    const e1rm = profile.e1rm[liftKeyInner] || 200;
+    const e1rm = profile.e1rm[liftKey] || 200;
     topLoad = Math.round(e1rm * pct / 2.5) * 2.5;
     backOffLoad = Math.round(topLoad * (1 - getBackOffDrop(block.phase)) / 2.5) * 2.5;
 
@@ -51,7 +52,9 @@ export default function ReadinessBrief() {
     }
   }
 
-  // Persist RCS-modified loads to session exercise so downstream screens can read them
+  // Persist RCS-modified loads to session exercise so downstream screens can read them.
+  // Depends on currentSession.id so it re-runs if the session changes (e.g. after App.tsx
+  // restores currentSession asynchronously from the persisted block on mount).
   useEffect(() => {
     if (!ex || !block || !currentSession) return;
     if (ex.prescribedLoad != null) return;
@@ -61,8 +64,10 @@ export default function ReadinessBrief() {
         i === exIdx ? { ...e, prescribedLoad: topLoad, backOffLoad, rpeTarget: stopRpe } : e
       ),
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // topLoad/backOffLoad/stopRpe are derived from currentSession.id + profile; tracking
+  // currentSession.id is enough to detect a new session without causing a loop.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSession?.id]);
 
   if (!currentSession || !block) {
     return (

@@ -68,7 +68,6 @@ export default function Override() {
         const lastTopSet = [...sets].reverse().find(s => s.setType === 'TOP_SET' && s.exerciseId === currentExId);
         const source = lastBackOff || lastTopSet || sets[sets.length - 1];
         const newSet: SetLog = {
-          // eslint-disable-next-line react-hooks/purity
           id: `set-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
           exerciseId: source.exerciseId,
           setType: 'BACK_OFF',
@@ -140,7 +139,6 @@ export default function Override() {
         : null;
       if (lastSet) {
         const correctedSet: SetLog = {
-          // eslint-disable-next-line react-hooks/purity
           id: `set-${Date.now()}-load-mod`,
           exerciseId: lastSet.exerciseId,
           setType: lastSet.setType,
