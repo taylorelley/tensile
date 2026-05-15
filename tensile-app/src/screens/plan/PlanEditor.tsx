@@ -2,39 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import type { SessionExercise } from '../../store';
+import { BUILTIN_EXERCISES, TAG_GROUPS, type CatalogEntry } from '../../exerciseCatalog';
 import { Phone, AppHeader, PrimaryBtn, T } from '../../shared';
-
-interface CatalogEntry {
-  id: string;
-  name: string;
-  tag: SessionExercise['tag'];
-  defaultSets: number;
-  defaultReps: number;
-  defaultRpe: number;
-}
-
-const EXERCISE_CATALOG: CatalogEntry[] = [
-  { id: 'barbell_back_squat',    name: 'Back squat',       tag: 'PRIMARY', defaultSets: 4, defaultReps: 3,  defaultRpe: 8.5 },
-  { id: 'bench_press',           name: 'Bench press',      tag: 'PRIMARY', defaultSets: 4, defaultReps: 4,  defaultRpe: 8.0 },
-  { id: 'conventional_deadlift', name: 'Conventional DL',  tag: 'PRIMARY', defaultSets: 3, defaultReps: 2,  defaultRpe: 8.5 },
-  { id: 'close_grip_bench',      name: 'Close-grip bench', tag: 'PRIMARY', defaultSets: 4, defaultReps: 5,  defaultRpe: 7.5 },
-  { id: 'front_squat',           name: 'Front squat',      tag: 'ASSIST',  defaultSets: 3, defaultReps: 5,  defaultRpe: 8.0 },
-  { id: 'overhead_press',        name: 'Overhead press',   tag: 'ASSIST',  defaultSets: 3, defaultReps: 6,  defaultRpe: 8.0 },
-  { id: 'paused_squat',          name: 'Paused squat',     tag: 'ASSIST',  defaultSets: 3, defaultReps: 4,  defaultRpe: 8.0 },
-  { id: 'incline_press',         name: 'Incline press',    tag: 'ASSIST',  defaultSets: 3, defaultReps: 6,  defaultRpe: 8.0 },
-  { id: 'romanian_deadlift',     name: 'Romanian DL',      tag: 'SUPP',    defaultSets: 3, defaultReps: 8,  defaultRpe: 7.5 },
-  { id: 'leg_curl',              name: 'Leg curl',         tag: 'SUPP',    defaultSets: 3, defaultReps: 12, defaultRpe: 8.0 },
-  { id: 'leg_press',             name: 'Leg press',        tag: 'SUPP',    defaultSets: 3, defaultReps: 10, defaultRpe: 8.0 },
-  { id: 'leg_extension',         name: 'Leg extension',    tag: 'SUPP',    defaultSets: 3, defaultReps: 12, defaultRpe: 8.0 },
-  { id: 'cable_row',             name: 'Cable row',        tag: 'SUPP',    defaultSets: 3, defaultReps: 10, defaultRpe: 8.0 },
-  { id: 'barbell_row',           name: 'Barbell row',      tag: 'SUPP',    defaultSets: 3, defaultReps: 8,  defaultRpe: 8.0 },
-  { id: 'lat_pulldown',          name: 'Lat pulldown',     tag: 'SUPP',    defaultSets: 3, defaultReps: 10, defaultRpe: 8.0 },
-  { id: 'dumbbell_curl',         name: 'Dumbbell curl',    tag: 'SUPP',    defaultSets: 3, defaultReps: 12, defaultRpe: 8.5 },
-  { id: 'lateral_raise',         name: 'Lateral raise',    tag: 'SUPP',    defaultSets: 3, defaultReps: 15, defaultRpe: 8.5 },
-  { id: 'plank',                 name: 'Plank',            tag: 'CORE',    defaultSets: 3, defaultReps: 1,  defaultRpe: 7.0 },
-];
-
-const TAG_GROUPS: SessionExercise['tag'][] = ['PRIMARY', 'ASSIST', 'SUPP', 'CORE'];
 
 const TAG_COLOR: Record<SessionExercise['tag'], string> = {
   PRIMARY: T.accent,
@@ -124,10 +93,11 @@ function ExerciseRow({
 }
 
 function AddPicker({
-  sessionId, existingIds, onAdd, onClose,
+  sessionId, existingIds, catalog, onAdd, onClose,
 }: {
   sessionId: string;
   existingIds: Set<string>;
+  catalog: CatalogEntry[];
   onAdd: (sessionId: string, entry: CatalogEntry) => void;
   onClose: () => void;
 }) {
@@ -156,7 +126,7 @@ function AddPicker({
         </div>
 
         {TAG_GROUPS.map(tag => {
-          const entries = EXERCISE_CATALOG.filter(e => e.tag === tag);
+          const entries = catalog.filter(e => e.tag === tag);
           return (
             <div key={tag} style={{ padding: '12px 22px 0' }}>
               <div className="tns-eyebrow" style={{
@@ -195,6 +165,9 @@ export default function PlanEditor() {
   const navigate = useNavigate();
   const currentBlock = useStore(s => s.currentBlock);
   const updateSession = useStore(s => s.updateSession);
+  const customExercises = useStore(s => s.customExercises);
+
+  const catalog: CatalogEntry[] = [...BUILTIN_EXERCISES, ...customExercises];
 
   const scheduledSessions = (currentBlock?.sessions ?? []).filter(s => s.status === 'SCHEDULED');
 
@@ -345,6 +318,7 @@ export default function PlanEditor() {
           <AddPicker
             sessionId={activeSession.id}
             existingIds={activeExerciseIds}
+            catalog={catalog}
             onAdd={addExercise}
             onClose={() => setAddPickerOpen(false)}
           />

@@ -38,6 +38,9 @@ import Pivot from './screens/deload/Pivot';
 // Plan
 import PlanEditor from './screens/plan/PlanEditor';
 
+// Lifts
+import LiftsLibrary from './screens/lifts/LiftsLibrary';
+
 // Meet
 import MeetSetup from './screens/meet/MeetSetup';
 import Peaking from './screens/meet/Peaking';
@@ -81,7 +84,7 @@ function App() {
           <Route path="/session/drop" element={<DropProtocol />} />
           <Route path="/session/summary" element={<Summary />} />
           <Route path="/session/override" element={<Override />} />
-          <Route path="/lifts" element={<Performance />} />
+          <Route path="/lifts" element={<LiftsLibrary />} />
           <Route path="/block/performance" element={<Performance />} />
           <Route path="/block/volume" element={<Volume />} />
           <Route path="/block/readiness" element={<Readiness />} />

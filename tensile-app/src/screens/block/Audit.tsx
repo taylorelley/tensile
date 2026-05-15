@@ -38,15 +38,11 @@ export default function Audit() {
     // Overrides
     if (s.overrides && s.overrides.length > 0) {
       for (const o of s.overrides) {
-        const desc =
-          typeof o === 'string'
-            ? o
-            : (o as { description?: string }).description ?? JSON.stringify(o);
         entries.push({
           wk: s.scheduledDate,
           date: s.scheduledDate,
           type: 'OVERRIDE',
-          detail: desc,
+          detail: o,
         });
       }
     }

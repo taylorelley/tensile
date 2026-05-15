@@ -40,6 +40,8 @@ export default function Schedule() {
   const [availableDays, setAvailableDays] = useState<boolean[]>(profile.availableDays);
   const [sessionDuration, setSessionDuration] = useState(profile.sessionDuration);
   const [excludedExercises, setExcludedExercises] = useState<string[]>(profile.excludedExercises || []);
+  const [addingExclusion, setAddingExclusion] = useState(false);
+  const [exclusionDraft, setExclusionDraft] = useState('');
 
   const trainingFrequency = availableDays.filter(Boolean).length;
 
@@ -55,6 +57,16 @@ export default function Schedule() {
     setExcludedExercises(prev =>
       prev.includes(name) ? prev.filter(e => e !== name) : [...prev, name]
     );
+  };
+
+  const commitExclusion = () => {
+    const v = exclusionDraft.trim();
+    if (!v) { setAddingExclusion(false); setExclusionDraft(''); return; }
+    setExcludedExercises(prev =>
+      prev.some(e => e.toLowerCase() === v.toLowerCase()) ? prev : [...prev, v]
+    );
+    setExclusionDraft('');
+    setAddingExclusion(false);
   };
 
   const handleContinue = () => {
@@ -106,28 +118,55 @@ export default function Schedule() {
 
       <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Exclude exercises</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-        {([
-          'Conventional DL',
-          'Overhead press',
-          'Behind-neck press',
-          'Box squat',
-          'Snatch-grip DL',
-        ]).map((l) => {
-          const x = excludedExercises.includes(l);
-          return (
-            <div key={l} onClick={() => toggleExcluded(l)} style={{
-              border: `1px solid ${x ? T.bad : T.line}`,
-              color: x ? T.bad : T.textDim,
-              padding: '6px 12px', fontSize: 11.5,
-              fontFamily: T.mono, letterSpacing: '0.02em',
-              textDecoration: x ? 'line-through' : 'none',
-              cursor: 'pointer',
-            }}>{l}</div>
-          );
-        })}
+        {(() => {
+          const presets = ['Conventional DL', 'Overhead press', 'Behind-neck press', 'Box squat', 'Snatch-grip DL'];
+          const extras = excludedExercises.filter(e => !presets.includes(e));
+          return [...presets, ...extras].map((l) => {
+            const x = excludedExercises.includes(l);
+            return (
+              <div key={l} onClick={() => toggleExcluded(l)} style={{
+                border: `1px solid ${x ? T.bad : T.line}`,
+                color: x ? T.bad : T.textDim,
+                padding: '6px 12px', fontSize: 11.5,
+                fontFamily: T.mono, letterSpacing: '0.02em',
+                textDecoration: x ? 'line-through' : 'none',
+                cursor: 'pointer',
+              }}>{l}</div>
+            );
+          });
+        })()}
       </div>
-      <div style={{ marginTop: 8, fontSize: 11, color: T.textMute, fontFamily: T.mono, letterSpacing: '0.04em' }}>
-        + ADD EXCLUSION
+      <div style={{ marginTop: 8 }}>
+        {addingExclusion ? (
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input
+              autoFocus
+              value={exclusionDraft}
+              onChange={e => setExclusionDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') commitExclusion(); if (e.key === 'Escape') { setAddingExclusion(false); setExclusionDraft(''); } }}
+              placeholder="e.g. Hack squat"
+              style={{
+                flex: 1, fontFamily: T.mono, fontSize: 12, background: 'transparent',
+                border: `1px solid ${T.line}`, color: T.text, padding: '6px 10px', outline: 'none',
+              }}
+            />
+            <span
+              onClick={commitExclusion}
+              className="tns-mono"
+              style={{ fontSize: 10, color: T.accent, letterSpacing: '0.08em', cursor: 'pointer', padding: '4px 8px' }}
+            >ADD</span>
+            <span
+              onClick={() => { setAddingExclusion(false); setExclusionDraft(''); }}
+              className="tns-mono"
+              style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer', padding: '4px 8px' }}
+            >CANCEL</span>
+          </div>
+        ) : (
+          <span
+            onClick={() => setAddingExclusion(true)}
+            style={{ fontSize: 11, color: T.accent, fontFamily: T.mono, letterSpacing: '0.04em', cursor: 'pointer' }}
+          >+ ADD EXCLUSION</span>
+        )}
       </div>
     </OBShell>
   );

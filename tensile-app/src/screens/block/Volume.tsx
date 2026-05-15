@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import type { Session } from '../../store';
-import { Phone, TabBar, T, Chart, ChartBars } from '../../shared';
+import { Phone, TabBar, T, Chart, ChartBars, ChartEmpty } from '../../shared';
 import { volumeBudget } from '../../engine';
 
 function weeklyAverage(
@@ -30,9 +30,6 @@ function weeklyAverage(
   });
 }
 
-const HARDCODED_SETS = [12, 13, 14, 15, 16, 17, 14];
-const HARDCODED_SFI = [320, 360, 410, 440, 480, 510, 420];
-
 export default function Volume() {
   const navigate = useNavigate();
   const currentBlock = useStore((s) => s.currentBlock);
@@ -42,22 +39,19 @@ export default function Volume() {
   const startDate = currentBlock?.startDate ?? '';
 
   // Weekly working-set count (TOP_SET + BACK_OFF) — same units as MEV/MRV landmarks
-  let setCountData = startDate
+  const setCountData = startDate
     ? weeklyAverage(
         sessions,
         startDate,
         (s) => s.sets.filter(set => set.setType === 'TOP_SET' || set.setType === 'BACK_OFF').length
       )
     : [];
-  let sfiData = startDate
+  const sfiData = startDate
     ? weeklyAverage(sessions, startDate, (s) => s.sfi)
     : [];
 
   const setCountHasData = setCountData.some((v) => v > 0);
   const sfiHasData = sfiData.some((v) => v > 0);
-
-  if (!setCountHasData) setCountData = HARDCODED_SETS;
-  if (!sfiHasData) sfiData = HARDCODED_SFI;
 
   const mev = profile.mevEstimates.quads ?? 10;
   const mrv = profile.mrvEstimates.quads ?? 22;
@@ -155,22 +149,28 @@ export default function Volume() {
         </div>
 
         <div style={{ marginBottom: 28 }}>
-          <ChartBars data={setCountData} w={300} h={100} mev={mev} mav={mav} mrv={mrv} />
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              marginTop: 4,
-              fontFamily: T.mono,
-              fontSize: 9,
-              color: T.textMute,
-              letterSpacing: '0.06em',
-            }}
-          >
-            {setCountData.map((_, i) => (
-              <span key={i}>W{i + 1}</span>
-            ))}
-          </div>
+          {setCountHasData ? (
+            <>
+              <ChartBars data={setCountData} w={300} h={100} mev={mev} mav={mav} mrv={mrv} />
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginTop: 4,
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  color: T.textMute,
+                  letterSpacing: '0.06em',
+                }}
+              >
+                {setCountData.map((_, i) => (
+                  <span key={i}>W{i + 1}</span>
+                ))}
+              </div>
+            </>
+          ) : (
+            <ChartEmpty message="NO WORKING SETS LOGGED YET" h={100} />
+          )}
         </div>
 
         {/* SFI / sRPE */}
@@ -179,7 +179,11 @@ export default function Volume() {
           <span style={{ color: T.caution }}>HEURISTIC</span>
         </div>
         <div style={{ marginBottom: 22 }}>
-          <Chart data={sfiData} color={T.caution} w={320} h={80} ticks={3} />
+          {sfiHasData ? (
+            <Chart data={sfiData} color={T.caution} w={320} h={80} ticks={3} />
+          ) : (
+            <ChartEmpty message="NO SFI DATA YET" h={80} />
+          )}
         </div>
 
         {/* Summary grid */}

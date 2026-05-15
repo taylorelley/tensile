@@ -201,6 +201,16 @@ export function Chart({ data, w = 320, h = 100, color = T.accent, ticks = 4, pea
   );
 }
 
+export function ChartEmpty({ message = 'NO DATA YET', h = 100 }: { message?: string; h?: number }) {
+  return (
+    <div style={{
+      height: h, border: `1px dashed ${T.line}`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontFamily: T.mono, fontSize: 10, color: T.textMute, letterSpacing: '0.08em',
+    }}>{message}</div>
+  );
+}
+
 export function ChartBars({ data, w = 320, h = 100, mev, mav, mrv }: { data: number[]; w?: number; h?: number; mev?: number; mav?: number; mrv?: number }) {
   const max = Math.max(...data, mrv || 0);
   const barW = w / data.length - 2;

@@ -128,14 +128,6 @@ export default function Today() {
   const benchTrend = weeklyBestE1rm(['bench_press']);
   const deadliftTrend = weeklyBestE1rm(['conventional_deadlift']);
 
-  const defaultSquat = [200, 204, 208, 206, 212, 215, 218];
-  const defaultBench = [140, 141, 143, 142, 144, 144, 144];
-  const defaultDeadlift = [230, 232, 235, 234, 238, 240, 241];
-
-  const sTrend = squatTrend.length > 0 ? squatTrend : defaultSquat.slice(0, Math.max(week, 1));
-  const bTrend = benchTrend.length > 0 ? benchTrend : defaultBench.slice(0, Math.max(week, 1));
-  const dTrend = deadliftTrend.length > 0 ? deadliftTrend : defaultDeadlift.slice(0, Math.max(week, 1));
-
   const handleSkip = () => {
     if (block && session) {
       updateSession(block.id, session.id, { status: 'SKIPPED' as const });
@@ -143,7 +135,7 @@ export default function Today() {
   };
 
   const fmtDelta = (trend: number[]) => {
-    if (trend.length < 2) return '+0.0%';
+    if (trend.length < 2) return '—';
     const first = trend[0] || 1;
     const last = trend[trend.length - 1] || first;
     const delta = ((last - first) / first) * 100;
@@ -151,9 +143,9 @@ export default function Today() {
   };
 
   const lifts = [
-    { l: 'Squat', v: profile.e1rm.squat.toFixed(1), d: fmtDelta(sTrend), s: sTrend.length > 0 ? sTrend : defaultSquat },
-    { l: 'Bench', v: profile.e1rm.bench.toFixed(1), d: fmtDelta(bTrend), s: bTrend.length > 0 ? bTrend : defaultBench },
-    { l: 'Deadlift', v: profile.e1rm.deadlift.toFixed(1), d: fmtDelta(dTrend), s: dTrend.length > 0 ? dTrend : defaultDeadlift },
+    { l: 'Squat', v: profile.e1rm.squat.toFixed(1), d: fmtDelta(squatTrend), s: squatTrend },
+    { l: 'Bench', v: profile.e1rm.bench.toFixed(1), d: fmtDelta(benchTrend), s: benchTrend },
+    { l: 'Deadlift', v: profile.e1rm.deadlift.toFixed(1), d: fmtDelta(deadliftTrend), s: deadliftTrend },
   ];
 
   return (
@@ -209,19 +201,24 @@ export default function Today() {
         {/* Lift dashboard */}
         <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Rolling e1RM</div>
         <div style={{ border: `1px solid ${T.line}`, marginBottom: 14 }}>
-          {lifts.map((r, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '14px 16px', borderBottom: i < 2 ? `1px solid ${T.lineSoft}` : 'none', gap: 14 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{r.l}</div>
-                <div className="tns-mono" style={{ fontSize: 9.5, color: T.good, marginTop: 2, letterSpacing: '0.04em' }}>{r.d} · 4WK</div>
+          {lifts.map((r, i) => {
+            const hasData = r.s.length > 0;
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '14px 16px', borderBottom: i < 2 ? `1px solid ${T.lineSoft}` : 'none', gap: 14 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>{r.l}</div>
+                  <div className="tns-mono" style={{ fontSize: 9.5, color: hasData ? T.good : T.textMute, marginTop: 2, letterSpacing: '0.04em' }}>
+                    {hasData ? `${r.d} · ${r.s.length}WK` : 'NO DATA YET'}
+                  </div>
+                </div>
+                <Spark data={r.s} w={68} h={22} />
+                <div style={{ textAlign: 'right', minWidth: 60 }}>
+                  <span className="tns-serif" style={{ fontSize: 24 }}>{r.v}</span>
+                  <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, marginLeft: 3 }}>KG</span>
+                </div>
               </div>
-              <Spark data={r.s} w={68} h={22} />
-              <div style={{ textAlign: 'right', minWidth: 60 }}>
-                <span className="tns-serif" style={{ fontSize: 24 }}>{r.v}</span>
-                <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, marginLeft: 3 }}>KG</span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Block progress strip */}
