@@ -53,7 +53,12 @@ export default function Today() {
         <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 42, lineHeight: 1, marginBottom: 12 }}>Rest day</div>
-            <div style={{ fontSize: 13, color: T.textDim, lineHeight: 1.55 }}>No session scheduled for today.</div>
+            <div style={{ fontSize: 13, color: T.textDim, lineHeight: 1.55, marginBottom: 20 }}>No session scheduled for today.</div>
+            <span
+              className="tns-mono"
+              style={{ fontSize: 10, color: T.accent, letterSpacing: '0.08em', cursor: 'pointer' }}
+              onClick={() => navigate('/sessions')}
+            >VIEW SCHEDULE →</span>
           </div>
         </div>
         <TabBar active="today" onNavigate={(id) => navigate(id === 'today' ? '/' : id === 'block' ? '/block/performance' : id === 'lifts' ? '/lifts' : id === 'meet' ? '/meet/setup' : '/')} />
@@ -234,6 +239,14 @@ export default function Today() {
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: T.mono, fontSize: 9, color: T.textMute, letterSpacing: '0.06em' }}>
           <span>WK 1</span><span>WK {week} · NOW</span><span>WK {profile.ttpEstimate || 7} · EST PEAK</span>
+        </div>
+
+        <div style={{ marginTop: 20, textAlign: 'center' }}>
+          <span
+            className="tns-mono"
+            style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }}
+            onClick={() => navigate('/sessions')}
+          >VIEW SCHEDULE →</span>
         </div>
       </div>
       <TabBar active="today" onNavigate={(id) => navigate(id === 'today' ? '/' : id === 'block' ? '/block/performance' : id === 'lifts' ? '/lifts' : id === 'meet' ? '/meet/setup' : '/')} />
