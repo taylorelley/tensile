@@ -15,7 +15,9 @@ export default function ReadinessBrief() {
   const rcs = currentSession?.rcs || 72;
   const { band, modifier } = rcsBand(rcs);
   const ex = currentSession?.exercises?.[currentSession?.currentExerciseIndex || 0];
-  const liftKey = ex?.id === 'barbell_back_squat' ? 'squat' : ex?.id === 'bench_press' ? 'bench' : ex?.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
+  const liftKey = (ex?.id?.includes('bench') || ex?.id?.includes('press')) ? 'bench'
+    : ex?.id?.includes('deadlift') ? 'deadlift'
+    : 'squat';
   const liftName = liftKey.charAt(0).toUpperCase() + liftKey.slice(1);
   let topLoad = 185;
   let backOffLoad = 163;

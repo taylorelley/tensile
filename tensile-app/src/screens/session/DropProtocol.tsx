@@ -89,9 +89,8 @@ export default function DropProtocol() {
       : topSet.exerciseId);
 
   const buildSetLog = (): SetLog => {
-    const liftKey = topSet.exerciseId === 'barbell_back_squat' ? 'squat'
-      : topSet.exerciseId === 'bench_press' ? 'bench'
-      : topSet.exerciseId === 'conventional_deadlift' ? 'deadlift'
+    const liftKey = (topSet.exerciseId.includes('bench') || topSet.exerciseId.includes('press')) ? 'bench'
+      : topSet.exerciseId.includes('deadlift') ? 'deadlift'
       : 'squat';
     const e1rmResult = ensembleE1RM(
       { load: backOffLoad, reps: topSet.prescribedReps, rpe },

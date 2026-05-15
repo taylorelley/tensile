@@ -293,7 +293,9 @@ export const useStore = create<AppState>()(
       startSession: (blockId, sessionId) => {
         const block = get().blocks.find(b => b.id === blockId);
         const session = block?.sessions.find(s => s.id === sessionId);
-        if (session) set({ currentSession: { ...session, currentExerciseIndex: session.currentExerciseIndex ?? 0 } });
+        if (session && session.status !== 'COMPLETE' && session.status !== 'SKIPPED') {
+          set({ currentSession: { ...session, currentExerciseIndex: session.currentExerciseIndex ?? 0 } });
+        }
       },
 
       logSet: (blockId, sessionId, setLog) => {
@@ -392,7 +394,10 @@ export const useStore = create<AppState>()(
             )
           : state.blocks;
         set({
-          profile: { ...profile, completedBlocks: (profile.completedBlocks || 0) + 1 },
+          profile: {
+            ...profile,
+            completedBlocks: (profile.completedBlocks || 0) + (prevBlock ? 1 : 0),
+          },
           blocks: [...updatedBlocks, block],
           currentBlock: block,
           currentSession: null,

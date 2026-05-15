@@ -90,7 +90,11 @@ export default function Today() {
     return { label: 'Start back-off →', path: '/session/drop' };
   }
 
-  const resumeTarget = (session.status === 'IN_PROGRESS' || session.rcs > 0) ? getResumeTarget(session) : null;
+  const resumeTarget = (
+    session.status !== 'COMPLETE' &&
+    session.status !== 'SKIPPED' &&
+    (session.status === 'IN_PROGRESS' || session.rcs > 0)
+  ) ? getResumeTarget(session) : null;
 
   function weeklyBestE1rm(exerciseIds: string[]): number[] {
     if (!block) return [];
