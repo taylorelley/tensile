@@ -184,7 +184,7 @@ export default function NextBlock() {
           gap: 8,
         }}
       >
-        <PrimaryBtn dim full={false} onClick={() => navigate('/block/performance')}>
+        <PrimaryBtn dim full={false} onClick={() => navigate('/plan/edit')}>
           Customise
         </PrimaryBtn>
         <PrimaryBtn onClick={handleStartBlock}>Start block →</PrimaryBtn>

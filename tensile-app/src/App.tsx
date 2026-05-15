@@ -34,6 +34,9 @@ import DeloadRec from './screens/deload/DeloadRec';
 import DeloadStructure from './screens/deload/DeloadStructure';
 import Pivot from './screens/deload/Pivot';
 
+// Plan
+import PlanEditor from './screens/plan/PlanEditor';
+
 // Meet
 import MeetSetup from './screens/meet/MeetSetup';
 import Peaking from './screens/meet/Peaking';
@@ -83,6 +86,7 @@ function App() {
           <Route path="/block/weakpoint" element={<WeakPointReview />} />
           <Route path="/block/audit" element={<Audit />} />
           <Route path="/block/next" element={<NextBlock />} />
+          <Route path="/plan/edit" element={<PlanEditor />} />
           <Route path="/deload/rec" element={<DeloadRec />} />
           <Route path="/deload/structure" element={<DeloadStructure />} />
           <Route path="/deload/pivot" element={<Pivot />} />
