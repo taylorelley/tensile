@@ -240,7 +240,7 @@ export default function DeloadRec() {
         }}
       >
         <PrimaryBtn dim full={false} onClick={() => navigate('/')}>
-          Defer 1 wk
+          Skip →
         </PrimaryBtn>
         <PrimaryBtn onClick={() => navigate('/deload/structure')}>Choose structure →</PrimaryBtn>
       </div>

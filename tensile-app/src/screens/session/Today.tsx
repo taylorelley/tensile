@@ -13,7 +13,6 @@ export default function Today() {
   const profile = useStore(s => s.profile);
   const startSession = useStore(s => s.startSession);
   const updateSession = useStore(s => s.updateSession);
-  const updateBlock = useStore(s => s.updateBlock);
   const generateFirstBlock = useStore(s => s.generateFirstBlock);
 
   const today = new Date().toISOString().split('T')[0];
@@ -164,7 +163,7 @@ export default function Today() {
               <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 32, lineHeight: 1, letterSpacing: '-0.02em' }}>{focus}</div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}>EST · 62 MIN</div>
+              <div className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}>EST · {Math.round(exercises.reduce((sum, ex) => sum + ex.sets * 3.5, 0))} MIN</div>
               <div className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em', marginTop: 3 }}>{exercises.length} EXERCISES</div>
             </div>
           </div>
@@ -188,12 +187,7 @@ export default function Today() {
               }}>{resumeTarget?.label ?? 'Begin wellness check →'}</PrimaryBtn>
             </div>
             <div style={{ marginTop: 10, textAlign: 'center' }}>
-              <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => {
-                if (block) {
-                  updateBlock(block.id, { phase: 'DELOAD' as const });
-                  navigate('/deload/rec');
-                }
-              }}>TRIGGER DELOAD →</span>
+              <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => navigate('/deload/rec')}>TRIGGER DELOAD →</span>
             </div>
           </div>
         </div>

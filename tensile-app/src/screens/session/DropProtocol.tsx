@@ -130,7 +130,7 @@ export default function DropProtocol() {
     <Phone>
       <div style={{ padding: '8px 22px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span className="tns-eyebrow">{exerciseLabel} · Back-off · Set {currentSetNum}</span>
-        <span className="tns-mono" style={{ fontSize: 11, color: T.textMute, cursor: 'pointer' }} onClick={() => navigate('/session/summary')}>END SET ×</span>
+        <span className="tns-mono" style={{ fontSize: 11, color: T.textMute, cursor: 'pointer' }} onClick={() => navigate('/session/summary')}>FINISH ×</span>
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
         {/* Drop progress */}

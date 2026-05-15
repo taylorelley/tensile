@@ -83,14 +83,18 @@ export default function Performance() {
 
   const blockWeek = currentBlock?.week ?? 1;
   const minimumTTP = profile.ttpEstimate;
-  const squatPeak = detectPeak(squatTrend, minimumTTP, blockWeek);
-  const squatStall = detectStall(squatTrend, blockWeek);
-  const benchPeak = detectPeak(benchTrend, minimumTTP, blockWeek);
-  const benchStall = detectStall(benchTrend, blockWeek);
-  const deadliftPeak = detectPeak(deadliftTrend, minimumTTP, blockWeek);
-  const deadliftStall = detectStall(deadliftTrend, blockWeek);
+  // Filter out zero-padded weeks (no data) before running peak/stall detection
+  const squatTrendFiltered = squatTrend.filter(v => v > 0);
+  const benchTrendFiltered = benchTrend.filter(v => v > 0);
+  const deadliftTrendFiltered = deadliftTrend.filter(v => v > 0);
+  const squatPeak = detectPeak(squatTrendFiltered, minimumTTP, blockWeek);
+  const squatStall = detectStall(squatTrendFiltered, blockWeek);
+  const benchPeak = detectPeak(benchTrendFiltered, minimumTTP, blockWeek);
+  const benchStall = detectStall(benchTrendFiltered, blockWeek);
+  const deadliftPeak = detectPeak(deadliftTrendFiltered, minimumTTP, blockWeek);
+  const deadliftStall = detectStall(deadliftTrendFiltered, blockWeek);
 
-  const squatPeakWeek = squatPeak ? squatTrend.indexOf(Math.max(...squatTrend)) : -1;
+  const squatPeakWeek = squatPeak ? squatTrend.indexOf(Math.max(...squatTrendFiltered)) : -1;
 
   return (
     <Phone>

@@ -143,32 +143,41 @@ export function generateBlock(profile: UserProfile): Block {
   const blockId = `block-${Date.now()}`;
   const start = new Date();
   const sessions: Session[] = [];
-  for (let i = 0; i < 7; i++) {
-    if (!profile.availableDays[i]) continue;
-    const d = new Date(start);
-    d.setDate(d.getDate() + i);
-    const plan = createDayPlan(i);
-    const session: Session = {
-      id: `sess-${blockId}-${i}`,
-      blockId,
-      scheduledDate: d.toISOString().split('T')[0],
-      status: 'SCHEDULED',
-      exercises: plan.exercises,
-      currentExerciseIndex: 0,
-      wellness: { sleepQuality: 7, overallFatigue: 6, muscleSoreness: 5, motivation: 8, stress: 6 },
-      rcs: 0,
-      sfi: 0,
-      volumeLoad: 0,
-      sets: [],
-      overrides: [],
-    };
-    sessions.push(session);
+  const weeks = profile.ttpEstimate || 6;
+
+  for (let week = 0; week < weeks; week++) {
+    for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
+      if (!profile.availableDays[dayIdx]) continue;
+      const d = new Date(start);
+      d.setDate(d.getDate() + week * 7 + dayIdx);
+      const plan = createDayPlan(dayIdx);
+      const session: Session = {
+        id: `sess-${blockId}-w${week}-${dayIdx}`,
+        blockId,
+        scheduledDate: d.toISOString().split('T')[0],
+        status: 'SCHEDULED',
+        exercises: plan.exercises,
+        currentExerciseIndex: 0,
+        wellness: { sleepQuality: 7, overallFatigue: 6, muscleSoreness: 5, motivation: 8, stress: 6 },
+        rcs: 0,
+        sfi: 0,
+        volumeLoad: 0,
+        sets: [],
+        overrides: [],
+      };
+      sessions.push(session);
+    }
   }
+
+  const endDate = new Date(start);
+  endDate.setDate(endDate.getDate() + weeks * 7 - 1);
+
   return {
     id: blockId,
     type: 'DEVELOPMENT',
     phase: 'ACCUMULATION',
     startDate: start.toISOString().split('T')[0],
+    endDate: endDate.toISOString().split('T')[0],
     week: 1,
     status: 'ACTIVE',
     sessions,
@@ -232,6 +241,7 @@ interface AppState {
   generateNextDevelopmentBlock: () => void;
   generateDeloadBlock: () => void;
   generatePivotBlock: () => void;
+  generateRestBlock: () => void;
 
   currentSession: Session | null;
   /** Set by `startSession` internally; exposed for external override if needed */
@@ -492,6 +502,38 @@ export const useStore = create<AppState>()(
           profile: { ...profile, completedBlocks: (profile.completedBlocks || 0) + (prevBlock ? 1 : 0) },
           blocks: [...updatedBlocks, pivotBlock],
           currentBlock: pivotBlock,
+          currentSession: null,
+        });
+      },
+
+      generateRestBlock: () => {
+        const state = get();
+        const blockId = `block-${Date.now()}`;
+        const start = new Date();
+        const endDate = new Date(start);
+        endDate.setDate(endDate.getDate() + 6);
+        const restBlock: Block = {
+          id: blockId,
+          type: 'DELOAD',
+          phase: 'DELOAD',
+          startDate: start.toISOString().split('T')[0],
+          endDate: endDate.toISOString().split('T')[0],
+          week: 1,
+          status: 'ACTIVE',
+          sessions: [],
+        };
+        const prevBlock = state.currentBlock;
+        const updatedBlocks = prevBlock
+          ? state.blocks.map(b =>
+              b.id === prevBlock.id
+                ? { ...b, status: 'COMPLETE' as const, endDate: new Date().toISOString().split('T')[0] }
+                : b
+            )
+          : state.blocks;
+        set({
+          profile: { ...state.profile, completedBlocks: (state.profile.completedBlocks || 0) + (prevBlock ? 1 : 0) },
+          blocks: [...updatedBlocks, restBlock],
+          currentBlock: restBlock,
           currentSession: null,
         });
       },

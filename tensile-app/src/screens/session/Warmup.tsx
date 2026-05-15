@@ -14,7 +14,7 @@ export default function Warmup() {
   const [restSeconds, setRestSeconds] = useState(90);
   useEffect(() => {
     if (restSeconds <= 0) return;
-    const t = setInterval(() => setRestSeconds(s => s - 1), 1000);
+    const t = setInterval(() => setRestSeconds(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(t);
   }, [restSeconds]);
 
@@ -45,8 +45,10 @@ export default function Warmup() {
     );
   }
 
-  // Build warmup steps from the prescribed top-set load
-  const liftKey = ex.id === 'barbell_back_squat' ? 'squat' : ex.id === 'bench_press' ? 'bench' : ex.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
+  // Build warmup steps from the prescribed top-set load.
+  // Use the session's primary exercise (exercises[0]) as the e1RM base for all exercises.
+  const primaryEx = currentSession.exercises[0];
+  const liftKey = primaryEx?.id === 'barbell_back_squat' ? 'squat' : primaryEx?.id === 'bench_press' ? 'bench' : primaryEx?.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
   const pct = getRpePct(ex.reps, ex.rpeTarget);
   const e1rm = profile.e1rm[liftKey] || 200;
   const prescribedLoad = ex.prescribedLoad ?? Math.round(e1rm * pct / 2.5) * 2.5;
