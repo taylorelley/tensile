@@ -179,16 +179,32 @@ export default function Today() {
             ))}
           </div>
           <div style={{ padding: '12px 16px', borderTop: `1px solid ${T.lineSoft}`, background: session.status === 'IN_PROGRESS' ? 'rgba(255,110,58,0.08)' : 'rgba(255,110,58,0.04)' }}>
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <PrimaryBtn dim full={false} onClick={handleSkip}>Skip →</PrimaryBtn>
-              <PrimaryBtn onClick={() => {
-                startSession(block.id, session.id);
-                navigate(resumeTarget?.path ?? '/session/wellness');
-              }}>{resumeTarget?.label ?? 'Begin wellness check →'}</PrimaryBtn>
-            </div>
-            <div style={{ marginTop: 10, textAlign: 'center' }}>
-              <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => navigate('/deload/rec')}>TRIGGER DELOAD →</span>
-            </div>
+            {session.status === 'COMPLETE' ? (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                <span className="tns-mono" style={{ fontSize: 10, color: T.good, letterSpacing: '0.08em' }}>COMPLETED ✓</span>
+                <span className="tns-mono" style={{ fontSize: 10, color: T.accent, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => navigate('/session/summary')}>VIEW →</span>
+              </div>
+            ) : session.status === 'SKIPPED' ? (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                <span className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}>SESSION SKIPPED</span>
+                <span className="tns-mono" style={{ fontSize: 10, color: T.accent, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => updateSession(block.id, session.id, { status: 'SCHEDULED' as const })}>UNDO →</span>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <PrimaryBtn dim full={false} onClick={handleSkip}>Skip →</PrimaryBtn>
+                  <PrimaryBtn onClick={() => {
+                    startSession(block.id, session.id);
+                    navigate(resumeTarget?.path ?? '/session/wellness');
+                  }}>{resumeTarget?.label ?? 'Begin wellness check →'}</PrimaryBtn>
+                </div>
+                {block.sessions.filter(s => s.status === 'COMPLETE').length >= 3 && (
+                  <div style={{ marginTop: 10, textAlign: 'center' }}>
+                    <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => navigate('/deload/rec')}>TRIGGER DELOAD →</span>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
 

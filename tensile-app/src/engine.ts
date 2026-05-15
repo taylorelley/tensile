@@ -149,11 +149,11 @@ export function calculateRCS(
 }
 
 export function rcsBand(rcs: number): { band: string; modifier: string } {
-  if (rcs >= 85) return { band: 'Excellent', modifier: 'Benchmark may allow +3% load bump; no volume reduction' };
+  if (rcs >= 85) return { band: 'Excellent', modifier: 'Top-set load +3%; back-off load +3%; no volume reduction' };
   if (rcs >= 70) return { band: 'Good', modifier: 'Standard prescription; no modification' };
-  if (rcs >= 55) return { band: 'Moderate', modifier: 'Drop target reduced by 1–2%; RPE cap reduced by 0.5 points' };
-  if (rcs >= 40) return { band: 'Poor', modifier: 'Volume reduced 15–20%; RPE cap −1 point; consider deload' };
-  return { band: 'Very poor', modifier: 'Recommend deferring session; minimum recovery if user insists' };
+  if (rcs >= 55) return { band: 'Moderate', modifier: 'Back-off load −2%; no RPE cap change' };
+  if (rcs >= 40) return { band: 'Poor', modifier: 'Back-off load −5%; RPE cap −1 point; consider deload' };
+  return { band: 'Very poor', modifier: 'Back-off load −10%; RPE cap −1 point; defer session if possible' };
 }
 
 // §6.5 Weekly Volume Budget
@@ -276,7 +276,11 @@ export const DEFAULT_RPE_TABLE: Record<string, number> = {
   '4@10': 0.88, '4@9.5': 0.86, '4@9': 0.84, '4@8.5': 0.82, '4@8': 0.80, '4@7.5': 0.77, '4@7': 0.74,
   '5@10': 0.86, '5@9.5': 0.84, '5@9': 0.82, '5@8.5': 0.80, '5@8': 0.78, '5@7.5': 0.75, '5@7': 0.72,
   '6@10': 0.83, '6@9.5': 0.81, '6@9': 0.79, '6@8.5': 0.77, '6@8': 0.75, '6@7.5': 0.72, '6@7': 0.69,
+  // 7-rep row: interpolated (average of 6-rep and 8-rep rows)
+  '7@10': 0.805, '7@9.5': 0.785, '7@9': 0.765, '7@8.5': 0.745, '7@8': 0.725, '7@7.5': 0.695, '7@7': 0.665,
   '8@10': 0.78, '8@9.5': 0.76, '8@9': 0.74, '8@8.5': 0.72, '8@8': 0.70, '8@7.5': 0.67, '8@7': 0.64,
+  // 9-rep row: interpolated (average of 8-rep and 10-rep rows)
+  '9@10': 0.755, '9@9.5': 0.735, '9@9': 0.715, '9@8.5': 0.695, '9@8': 0.675, '9@7.5': 0.645, '9@7': 0.615,
   '10@10': 0.73, '10@9.5': 0.71, '10@9': 0.69, '10@8.5': 0.67, '10@8': 0.65, '10@7.5': 0.62, '10@7': 0.59,
 };
 

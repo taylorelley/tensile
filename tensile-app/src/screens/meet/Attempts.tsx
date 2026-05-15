@@ -28,11 +28,13 @@ export default function Attempts() {
   }));
 
   const total = lifts.reduce((a, l) => a + l.third, 0);
-  const previousTotal =
+  // Compare projected total (thirds at 102%) vs current rolling e1RM sum (at 100%)
+  const currentTotal = Math.round(
     (profile.rollingE1rm.squat || 0) +
     (profile.rollingE1rm.bench || 0) +
-    (profile.rollingE1rm.deadlift || 0);
-  const prDelta = Math.round((total - previousTotal) * 10) / 10;
+    (profile.rollingE1rm.deadlift || 0)
+  );
+  const prDelta = Math.round((total - currentTotal) * 10) / 10;
   const prSign = prDelta >= 0 ? '+' : '';
   const prColor = prDelta >= 0 ? T.good : T.bad;
 
@@ -51,7 +53,7 @@ export default function Attempts() {
         >
           <span className="tns-eyebrow">Projected total · all 3rds</span>
             <span className="tns-mono" style={{ fontSize: 11, color: prColor }}>
-            {prSign} {prDelta.toFixed(1)} KG {prDelta >= 0 ? 'PR' : ''}
+            {prSign}{prDelta.toFixed(1)} KG vs rolling e1RM
           </span>
         </div>
         <div

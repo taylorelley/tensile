@@ -150,7 +150,10 @@ export default function Wellness() {
       const avgLast = last3.reduce((sum, s) => sum + (s.srpe ?? 0), 0) / last3.length;
       rpeDrift = Math.max(0, avgLast - avgFirst);
     }
-    const rcs = calculateRCS(wellness, undefined, undefined, rpeDrift);
+    const wellnessComposite = (sleepQuality + overallFatigue + muscleSoreness + motivation + stress) / 5;
+    const baseHrv = 62;
+    const estimatedHrv7day = baseHrv + Math.round((wellnessComposite - 6.5) * 1.5);
+    const rcs = calculateRCS(wellness, estimatedHrv7day, baseHrv, rpeDrift);
     updateSession(block.id, currentSession.id, { wellness, rcs });
     navigate('/session/readiness');
   };
