@@ -13,6 +13,7 @@ import FirstBlock from './screens/onboarding/FirstBlock';
 
 // Session
 import Today from './screens/session/Today';
+import UpcomingSessions from './screens/session/UpcomingSessions';
 import Wellness from './screens/session/Wellness';
 import ReadinessBrief from './screens/session/ReadinessBrief';
 import Warmup from './screens/session/Warmup';
@@ -72,6 +73,7 @@ function App() {
       ) : (
         <>
           <Route path="/" element={<Today />} />
+          <Route path="/sessions" element={<UpcomingSessions />} />
           <Route path="/session/wellness" element={<Wellness />} />
           <Route path="/session/readiness" element={<ReadinessBrief />} />
           <Route path="/session/warmup" element={<Warmup />} />
