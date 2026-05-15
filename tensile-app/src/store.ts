@@ -101,7 +101,7 @@ export interface UserProfile {
   recentProgramme: string;
 }
 
-function createDayPlan(dayIndex: number): { focus: string; exercises: SessionExercise[] } {
+function createDayPlan(dayIndex: number, phase: BlockPhase = 'ACCUMULATION'): { focus: string; exercises: SessionExercise[] } {
   const map: Record<number, string> = {
     0: 'Squat',
     2: 'Bench',
@@ -109,27 +109,40 @@ function createDayPlan(dayIndex: number): { focus: string; exercises: SessionExe
     5: 'Bench (variation)',
   };
   const focus = map[dayIndex] || 'GPP';
+
+  // Phase modifiers for PRIMARY lifts relative to ACCUMULATION defaults
+  const rpeAdd = phase === 'REALISATION' ? 1.0 : phase === 'INTENSIFICATION' ? 0.5 : 0;
+  const repsDrop = phase === 'ACCUMULATION' ? 0 : 1;
+  const setsDrop = phase === 'REALISATION' ? 1 : 0;
+
+  const primary = (ex: SessionExercise): SessionExercise => ({
+    ...ex,
+    rpeTarget: Math.min(10, ex.rpeTarget + rpeAdd),
+    reps: Math.max(1, ex.reps - repsDrop),
+    sets: Math.max(1, ex.sets - setsDrop),
+  });
+
   const ex: SessionExercise[] = [];
   if (focus === 'Squat') {
-    ex.push({ id: 'barbell_back_squat', name: 'Back squat', tag: 'PRIMARY', sets: 4, reps: 3, rpeTarget: 8.5, dropPct: 12 });
+    ex.push(primary({ id: 'barbell_back_squat', name: 'Back squat', tag: 'PRIMARY', sets: 4, reps: 3, rpeTarget: 8.5, dropPct: 12 }));
     ex.push({ id: 'paused_squat', name: 'Paused squat', tag: 'ASSIST', sets: 3, reps: 4, rpeTarget: 8.0 });
     ex.push({ id: 'romanian_deadlift', name: 'Romanian DL', tag: 'SUPP', sets: 3, reps: 8, rpeTarget: 7.5 });
     ex.push({ id: 'leg_curl', name: 'Leg curl', tag: 'SUPP', sets: 3, reps: 12, rpeTarget: 8.0 });
     ex.push({ id: 'plank', name: 'Plank', tag: 'CORE', sets: 3, reps: 1, rpeTarget: 7.0 });
   } else if (focus === 'Bench') {
-    ex.push({ id: 'bench_press', name: 'Bench press', tag: 'PRIMARY', sets: 4, reps: 4, rpeTarget: 8.0, dropPct: 12 });
+    ex.push(primary({ id: 'bench_press', name: 'Bench press', tag: 'PRIMARY', sets: 4, reps: 4, rpeTarget: 8.0, dropPct: 12 }));
     ex.push({ id: 'overhead_press', name: 'Overhead press', tag: 'ASSIST', sets: 3, reps: 6, rpeTarget: 8.0 });
     ex.push({ id: 'cable_row', name: 'Cable row', tag: 'SUPP', sets: 3, reps: 10, rpeTarget: 8.0 });
     ex.push({ id: 'dumbbell_curl', name: 'Dumbbell curl', tag: 'SUPP', sets: 3, reps: 12, rpeTarget: 8.5 });
     ex.push({ id: 'plank', name: 'Plank', tag: 'CORE', sets: 3, reps: 1, rpeTarget: 7.0 });
   } else if (focus === 'Deadlift') {
-    ex.push({ id: 'conventional_deadlift', name: 'Conventional DL', tag: 'PRIMARY', sets: 3, reps: 2, rpeTarget: 8.5, dropPct: 10 });
+    ex.push(primary({ id: 'conventional_deadlift', name: 'Conventional DL', tag: 'PRIMARY', sets: 3, reps: 2, rpeTarget: 8.5, dropPct: 10 }));
     ex.push({ id: 'front_squat', name: 'Front squat', tag: 'ASSIST', sets: 3, reps: 5, rpeTarget: 8.0 });
     ex.push({ id: 'barbell_row', name: 'Barbell row', tag: 'SUPP', sets: 3, reps: 8, rpeTarget: 8.0 });
     ex.push({ id: 'leg_extension', name: 'Leg extension', tag: 'SUPP', sets: 3, reps: 12, rpeTarget: 8.0 });
     ex.push({ id: 'plank', name: 'Plank', tag: 'CORE', sets: 3, reps: 1, rpeTarget: 7.0 });
   } else if (focus === 'Bench (variation)') {
-    ex.push({ id: 'close_grip_bench', name: 'Close-grip bench', tag: 'PRIMARY', sets: 4, reps: 5, rpeTarget: 7.5, dropPct: 10 });
+    ex.push(primary({ id: 'close_grip_bench', name: 'Close-grip bench', tag: 'PRIMARY', sets: 4, reps: 5, rpeTarget: 7.5, dropPct: 10 }));
     ex.push({ id: 'incline_press', name: 'Incline press', tag: 'ASSIST', sets: 3, reps: 6, rpeTarget: 8.0 });
     ex.push({ id: 'lat_pulldown', name: 'Lat pulldown', tag: 'SUPP', sets: 3, reps: 10, rpeTarget: 8.0 });
     ex.push({ id: 'lateral_raise', name: 'Lateral raise', tag: 'SUPP', sets: 3, reps: 15, rpeTarget: 8.5 });
@@ -139,18 +152,25 @@ function createDayPlan(dayIndex: number): { focus: string; exercises: SessionExe
 }
 
 /** Internal helper used by `generateFirstBlock` store action. Exported for testing. */
-export function generateBlock(profile: UserProfile): Block {
+export function generateBlock(profile: UserProfile, phase: BlockPhase = 'ACCUMULATION'): Block {
   const blockId = `block-${Date.now()}`;
-  const start = new Date();
+
+  // Align to Monday of the current week so sessions land on the correct weekdays.
+  // availableDays uses 0=Mon ... 6=Sun; JS Date.getDay() uses 0=Sun ... 6=Sat.
+  const today = new Date();
+  const daysSinceMonday = (today.getDay() + 6) % 7;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - daysSinceMonday);
+
   const sessions: Session[] = [];
   const weeks = profile.ttpEstimate || 6;
 
   for (let week = 0; week < weeks; week++) {
     for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
       if (!profile.availableDays[dayIdx]) continue;
-      const d = new Date(start);
-      d.setDate(d.getDate() + week * 7 + dayIdx);
-      const plan = createDayPlan(dayIdx);
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + week * 7 + dayIdx);
+      const plan = createDayPlan(dayIdx, phase);
       const session: Session = {
         id: `sess-${blockId}-w${week}-${dayIdx}`,
         blockId,
@@ -169,14 +189,14 @@ export function generateBlock(profile: UserProfile): Block {
     }
   }
 
-  const endDate = new Date(start);
-  endDate.setDate(endDate.getDate() + weeks * 7 - 1);
+  const endDate = new Date(monday);
+  endDate.setDate(monday.getDate() + weeks * 7 - 1);
 
   return {
     id: blockId,
     type: 'DEVELOPMENT',
-    phase: 'ACCUMULATION',
-    startDate: start.toISOString().split('T')[0],
+    phase,
+    startDate: monday.toISOString().split('T')[0],
     endDate: endDate.toISOString().split('T')[0],
     week: 1,
     status: 'ACTIVE',
@@ -310,9 +330,15 @@ export const useStore = create<AppState>()(
       startSession: (blockId, sessionId) => {
         const block = get().blocks.find(b => b.id === blockId);
         const session = block?.sessions.find(s => s.id === sessionId);
-        if (session && session.status !== 'COMPLETE' && session.status !== 'SKIPPED') {
-          set({ currentSession: { ...session, currentExerciseIndex: session.currentExerciseIndex ?? 0 } });
-        }
+        if (!session || session.status === 'COMPLETE' || session.status === 'SKIPPED') return;
+        const updated = { ...session, status: 'IN_PROGRESS' as const, currentExerciseIndex: session.currentExerciseIndex ?? 0 };
+        set({
+          currentSession: updated,
+          blocks: get().blocks.map(b => b.id === blockId ? { ...b, sessions: b.sessions.map(s => s.id === sessionId ? updated : s) } : b),
+          currentBlock: get().currentBlock?.id === blockId
+            ? { ...get().currentBlock!, sessions: get().currentBlock!.sessions.map(s => s.id === sessionId ? updated : s) }
+            : get().currentBlock,
+        });
       },
 
       logSet: (blockId, sessionId, setLog) => {
@@ -401,7 +427,10 @@ export const useStore = create<AppState>()(
       generateNextDevelopmentBlock: () => {
         const state = get();
         const profile = state.profile;
-        const block = generateBlock(profile);
+        const completedCount = (profile.completedBlocks || 0) + (state.currentBlock ? 1 : 0);
+        const phaseOrder: BlockPhase[] = ['ACCUMULATION', 'INTENSIFICATION', 'REALISATION'];
+        const nextPhase = phaseOrder[completedCount % 3];
+        const block = generateBlock(profile, nextPhase);
         const prevBlock = state.currentBlock;
         const updatedBlocks = prevBlock
           ? state.blocks.map(b =>
@@ -425,7 +454,11 @@ export const useStore = create<AppState>()(
         const state = get();
         const profile = state.profile;
         const base = generateBlock(profile);
-        const sessions = base.sessions.map(s => ({
+        const blockStart = new Date(base.startDate);
+        const cutoff = new Date(blockStart);
+        cutoff.setDate(blockStart.getDate() + 7);
+        const cutoffStr = cutoff.toISOString().split('T')[0];
+        const sessions = base.sessions.filter(s => s.scheduledDate < cutoffStr).map(s => ({
           ...s,
           exercises: s.exercises.map(ex => ({
             ...ex,
@@ -433,7 +466,9 @@ export const useStore = create<AppState>()(
             rpeTarget: Math.min(ex.rpeTarget, 7.0),
           })),
         }));
-        const deloadBlock: Block = { ...base, type: 'DELOAD', phase: 'DELOAD', sessions };
+        const deloadEnd = new Date(blockStart);
+        deloadEnd.setDate(blockStart.getDate() + 6);
+        const deloadBlock: Block = { ...base, type: 'DELOAD', phase: 'DELOAD', sessions, endDate: deloadEnd.toISOString().split('T')[0] };
         const prevBlock = state.currentBlock;
         const updatedBlocks = prevBlock
           ? state.blocks.map(b =>
@@ -454,10 +489,14 @@ export const useStore = create<AppState>()(
         const state = get();
         const profile = state.profile;
         const base = generateBlock(profile);
-        // Two-week pivot: duplicate the sessions to cover 2 weeks
-        const week1 = base.sessions;
+        // Two-week pivot: use only the first week of sessions, duplicated into week 2
         const startDate = new Date(base.startDate);
-        const week2 = base.sessions.map(s => {
+        const cutoff = new Date(startDate);
+        cutoff.setDate(startDate.getDate() + 7);
+        const cutoffStr = cutoff.toISOString().split('T')[0];
+        const firstWeekSessions = base.sessions.filter(s => s.scheduledDate < cutoffStr);
+        const week1 = firstWeekSessions;
+        const week2 = firstWeekSessions.map(s => {
           const d = new Date(s.scheduledDate);
           d.setDate(d.getDate() + 7);
           return {

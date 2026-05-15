@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { T, Phone, PrimaryBtn } from '../../shared';
 import { calculateSetSFI } from '../../engine';
-import type { SetLog } from '../../store';
+import type { SetLog, SessionExercise } from '../../store';
 
 interface OverrideOption {
   icon: string;
@@ -34,6 +34,8 @@ export default function Override() {
   const [loadModMode, setLoadModMode] = useState(false);
   const [actualLoad, setActualLoad] = useState(0);
   const [swapMode, setSwapMode] = useState(false);
+  const [rpeCorrectMode, setRpeCorrectMode] = useState(false);
+  const [correctedRpe, setCorrectedRpe] = useState(8);
 
   const handleOverride = (reason: string) => {
     if (!block || !currentSession) {
@@ -106,6 +108,13 @@ export default function Override() {
       const lastSet = currentSession.sets.length > 0
         ? currentSession.sets[currentSession.sets.length - 1]
         : null;
+      if (!rpeCorrectMode) {
+        // Enter RPE correction mode — pre-fill with current logged RPE
+        setCorrectedRpe(lastSet?.actualRpe ?? 8);
+        setRpeCorrectMode(true);
+        return;
+      }
+      // Apply the corrected RPE
       if (lastSet) {
         const liftMap: Record<string, string> = {
           barbell_back_squat: 'squat',
@@ -114,12 +123,13 @@ export default function Override() {
         };
         const lift = liftMap[lastSet.exerciseId];
         if (lift) {
-          updateE1rm(lift, { load: lastSet.actualLoad, reps: lastSet.actualReps, rpe: lastSet.actualRpe });
+          updateE1rm(lift, { load: lastSet.actualLoad, reps: lastSet.actualReps, rpe: correctedRpe });
         }
       }
       updateSession(block.id, currentSession.id, {
-        overrides: [...(currentSession.overrides || []), reason],
+        overrides: [...(currentSession.overrides || []), `RPE correction: ${lastSet?.actualRpe ?? '?'} → ${correctedRpe}`],
       });
+      setRpeCorrectMode(false);
       navigate(-1);
       return;
     }
@@ -207,7 +217,31 @@ export default function Override() {
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: T.bg, borderTop: `1px solid ${T.line}`, paddingBottom: 24 }}>
         <div style={{ height: 4, width: 36, background: T.line, margin: '10px auto 18px' }} />
         <div style={{ padding: '0 22px' }}>
-          {loadModMode ? (
+          {rpeCorrectMode ? (
+            <>
+              <div className="tns-eyebrow" style={{ marginBottom: 4 }}>RPE correction</div>
+              <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 28, marginBottom: 18 }}>Correct last set RPE</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 18 }}>
+                <span className="tns-serif" style={{ fontSize: 64, lineHeight: 0.85 }}>{correctedRpe}</span>
+                <span className="tns-mono" style={{ fontSize: 14, color: T.textDim }}>RPE</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 18 }}>
+                {[7, 7.5, 8, 8.5, 9, 9.5, 10].map(v => (
+                  <div key={v} onClick={() => setCorrectedRpe(v)} style={{
+                    padding: '10px 0', textAlign: 'center', cursor: 'pointer',
+                    border: `1px solid ${v === correctedRpe ? T.accent : T.line}`,
+                    background: v === correctedRpe ? T.accent : 'transparent',
+                    color: v === correctedRpe ? '#1a0f08' : T.text,
+                    fontFamily: T.mono, fontSize: 11,
+                  }}>{v}</div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <PrimaryBtn dim full={false} onClick={() => setRpeCorrectMode(false)}>Cancel</PrimaryBtn>
+                <PrimaryBtn onClick={() => handleOverride('RPE correction')}>Apply →</PrimaryBtn>
+              </div>
+            </>
+          ) : loadModMode ? (
             <>
               <div className="tns-eyebrow" style={{ marginBottom: 4 }}>Load modification</div>
               <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 28, marginBottom: 18 }}>Adjust load</div>
@@ -244,12 +278,41 @@ export default function Override() {
                 return (
                   <>
                     <div style={{ fontSize: 12, color: T.textDim, marginBottom: 12 }}>Replacing: <span style={{ color: T.text }}>{currentEx?.name ?? '—'}</span></div>
-                    {opts.map((v, i) => (
-                      <div key={i} onClick={() => { updateSession(block!.id, currentSession!.id, { overrides: [...(currentSession!.overrides || []), `Swap: ${currentEx?.name} → ${v}`] }); setSwapMode(false); navigate(-1); }} style={{
-                        padding: '12px 14px', border: `1px solid ${T.line}`, marginBottom: 6, cursor: 'pointer',
-                        fontSize: 13,
-                      }}>{v}</div>
-                    ))}
+                    {opts.map((v, i) => {
+                      const variationMap: Record<string, Pick<SessionExercise, 'id' | 'name' | 'tag'>> = {
+                        'Paused squat': { id: 'paused_squat', name: 'Paused squat', tag: 'ASSIST' },
+                        'Front squat': { id: 'front_squat', name: 'Front squat', tag: 'ASSIST' },
+                        'Low-bar squat': { id: 'barbell_back_squat', name: 'Low-bar squat', tag: 'PRIMARY' },
+                        'Tempo squat': { id: 'tempo_squat', name: 'Tempo squat', tag: 'ASSIST' },
+                        'Close-grip bench': { id: 'close_grip_bench', name: 'Close-grip bench', tag: 'ASSIST' },
+                        'Paused bench': { id: 'paused_bench', name: 'Paused bench', tag: 'ASSIST' },
+                        'Spoto press': { id: 'spoto_press', name: 'Spoto press', tag: 'ASSIST' },
+                        'Incline press': { id: 'incline_press', name: 'Incline press', tag: 'ASSIST' },
+                        'Sumo deadlift': { id: 'sumo_deadlift', name: 'Sumo deadlift', tag: 'PRIMARY' },
+                        'Deficit DL': { id: 'deficit_deadlift', name: 'Deficit DL', tag: 'ASSIST' },
+                        'Snatch-grip DL': { id: 'snatch_grip_deadlift', name: 'Snatch-grip DL', tag: 'ASSIST' },
+                        'Block pull': { id: 'block_pull', name: 'Block pull', tag: 'ASSIST' },
+                        'Alternative movement': { id: 'alternative', name: 'Alternative movement', tag: 'ASSIST' },
+                      };
+                      return (
+                        <div key={i} onClick={() => {
+                          const mapped = variationMap[v];
+                          const exIdx = currentSession!.currentExerciseIndex || 0;
+                          const newExercises = currentSession!.exercises.map((ex, idx) =>
+                            idx === exIdx ? { ...ex, ...(mapped ?? { id: v.toLowerCase().replace(/\s+/g, '_'), name: v }) } : ex
+                          );
+                          updateSession(block!.id, currentSession!.id, {
+                            exercises: newExercises,
+                            overrides: [...(currentSession!.overrides || []), `Swap: ${currentEx?.name} → ${v}`],
+                          });
+                          setSwapMode(false);
+                          navigate(-1);
+                        }} style={{
+                          padding: '12px 14px', border: `1px solid ${T.line}`, marginBottom: 6, cursor: 'pointer',
+                          fontSize: 13,
+                        }}>{v}</div>
+                      );
+                    })}
                     <div style={{ marginTop: 12 }}>
                       <PrimaryBtn dim full={false} onClick={() => setSwapMode(false)}>Cancel</PrimaryBtn>
                     </div>
