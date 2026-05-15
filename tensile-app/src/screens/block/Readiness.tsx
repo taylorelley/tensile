@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import type { Session } from '../../store';
-import { Phone, TabBar, T, Chart, Spark } from '../../shared';
+import { Phone, TabBar, T, Chart, ChartEmpty, Spark } from '../../shared';
 
 function weeklyRcsTrend(
   sessions: Session[],
@@ -31,8 +31,6 @@ function weeklyRcsTrend(
   );
 }
 
-const HARDCODED_RCS = [76, 74, 72, 70, 68, 64, 58];
-
 export default function Readiness() {
   const navigate = useNavigate();
   const currentBlock = useStore((s) => s.currentBlock);
@@ -40,9 +38,8 @@ export default function Readiness() {
   const sessions = currentBlock?.sessions ?? [];
   const startDate = currentBlock?.startDate ?? '';
 
-  let rcs = startDate ? weeklyRcsTrend(sessions, startDate) : [];
+  const rcs = startDate ? weeklyRcsTrend(sessions, startDate) : [];
   const rcsHasData = rcs.some((v) => v > 0);
-  if (!rcsHasData) rcs = HARDCODED_RCS;
 
   const sortedSessions = [...sessions].sort(
     (a, b) =>
@@ -55,16 +52,11 @@ export default function Readiness() {
   const rcsReductions = rcsModSessions.filter(
     (s) =>
       s.overrides.some(
-        (o: unknown) =>
-          typeof o === 'string' &&
-          (o.includes('Lower RPE cap') || o.includes('Drop next set') || o.includes('Reactive deload'))
+        (o) => o.includes('Lower RPE cap') || o.includes('Drop next set') || o.includes('Reactive deload')
       )
   );
   const rcsBumps = rcsModSessions.filter(
-    (s) =>
-      s.overrides.some(
-        (o: unknown) => typeof o === 'string' && o.includes('Add a set')
-      )
+    (s) => s.overrides.some((o) => o.includes('Add a set'))
   );
 
   const blockLabel = currentBlock
@@ -114,20 +106,20 @@ export default function Readiness() {
         </div>
 
         <div style={{ marginBottom: 20 }}>
-          <Chart data={rcs} color={T.text} w={320} h={90} />
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              marginTop: 4,
-              fontFamily: T.mono,
-              fontSize: 9,
-              color: T.textMute,
-              letterSpacing: '0.06em',
-            }}
-          >
-            {rcs.length > 0 && (
-              <>
+          {rcsHasData ? (
+            <>
+              <Chart data={rcs} color={T.text} w={320} h={90} />
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginTop: 4,
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  color: T.textMute,
+                  letterSpacing: '0.06em',
+                }}
+              >
                 <span>W1 · {rcs[0]}</span>
                 <span>
                   W{Math.ceil(rcs.length / 2)} ·{' '}
@@ -136,9 +128,11 @@ export default function Readiness() {
                 <span>
                   W{rcs.length} · {rcs[rcs.length - 1]}
                 </span>
-              </>
-            )}
-          </div>
+              </div>
+            </>
+          ) : (
+            <ChartEmpty message="NO READINESS DATA YET" h={90} />
+          )}
         </div>
 
         {/* Session readiness table */}
@@ -256,17 +250,21 @@ export default function Readiness() {
         </div>
 
         {/* RCS sparkline */}
-        <div className="tns-eyebrow" style={{ marginBottom: 8 }}>
-          RCS trend
-        </div>
-        <div style={{ marginBottom: 18 }}>
-          <Spark
-            data={rcs}
-            color={T.accent}
-            w={320}
-            h={32}
-          />
-        </div>
+        {rcsHasData && (
+          <>
+            <div className="tns-eyebrow" style={{ marginBottom: 8 }}>
+              RCS trend
+            </div>
+            <div style={{ marginBottom: 18 }}>
+              <Spark
+                data={rcs}
+                color={T.accent}
+                w={320}
+                h={32}
+              />
+            </div>
+          </>
+        )}
 
         {/* Modifier session count */}
         <div style={{ border: `1px solid ${T.line}`, padding: '12px 16px' }}>

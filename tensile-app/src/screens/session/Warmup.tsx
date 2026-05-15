@@ -22,35 +22,43 @@ export default function Warmup() {
 
   const ex = currentSession?.exercises?.[currentSession?.currentExerciseIndex || 0];
 
-  // Build warmup steps from the prescribed top-set load
-  let warmupSets: { l: string; r: number; rpe?: string }[] = [
-    { l: 'Bar', r: 10 },
-    { l: '60 kg', r: 5 },
-    { l: '80 kg', r: 3 },
-    { l: '100 kg', r: 1 },
-  ];
-
-  if (ex && block) {
-    const liftKey = ex.id === 'barbell_back_squat' ? 'squat' : ex.id === 'bench_press' ? 'bench' : ex.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
-    const pct = getRpePct(ex.reps, ex.rpeTarget);
-    const e1rm = profile.e1rm[liftKey] || 200;
-    const prescribedLoad = ex.prescribedLoad ?? Math.round(e1rm * pct / 2.5) * 2.5;
-
-    warmupSets = [
-      { l: 'Bar', r: 10 },
-      { l: `${Math.round(prescribedLoad * 0.5 / 2.5) * 2.5} kg`, r: 5 },
-      { l: `${Math.round(prescribedLoad * 0.7 / 2.5) * 2.5} kg`, r: 3 },
-      { l: `${Math.round(prescribedLoad * 0.85 / 2.5) * 2.5} kg`, r: 2 },
-      { l: `${Math.round(prescribedLoad * 0.95 / 2.5) * 2.5} kg`, r: 1 },
-      { l: `${prescribedLoad} kg · BENCHMARK`, r: 1, rpe: `RPE ${ex.rpeTarget} target` },
-    ];
-  }
-
   const toggleWarmup = (i: number) => {
     setCompletedWarmups(prev =>
       prev.includes(i) ? prev.filter(j => j !== i) : [...prev, i]
     );
   };
+
+  if (!currentSession || !block || !ex) {
+    return (
+      <Phone>
+        <AppHeader eyebrow="Warm-up" title="Ramp" back onBack={() => navigate(-1)} />
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 22px' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 32, lineHeight: 1, marginBottom: 12 }}>No active session</div>
+            <div style={{ fontSize: 13, color: T.textDim }}>Please start a session from the Today screen.</div>
+          </div>
+        </div>
+        <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}` }}>
+          <PrimaryBtn onClick={() => navigate('/')}>Back to Today →</PrimaryBtn>
+        </div>
+      </Phone>
+    );
+  }
+
+  // Build warmup steps from the prescribed top-set load
+  const liftKey = ex.id === 'barbell_back_squat' ? 'squat' : ex.id === 'bench_press' ? 'bench' : ex.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
+  const pct = getRpePct(ex.reps, ex.rpeTarget);
+  const e1rm = profile.e1rm[liftKey] || 200;
+  const prescribedLoad = ex.prescribedLoad ?? Math.round(e1rm * pct / 2.5) * 2.5;
+
+  const warmupSets: { l: string; r: number; rpe?: string }[] = [
+    { l: 'Bar', r: 10 },
+    { l: `${Math.round(prescribedLoad * 0.5 / 2.5) * 2.5} kg`, r: 5 },
+    { l: `${Math.round(prescribedLoad * 0.7 / 2.5) * 2.5} kg`, r: 3 },
+    { l: `${Math.round(prescribedLoad * 0.85 / 2.5) * 2.5} kg`, r: 2 },
+    { l: `${Math.round(prescribedLoad * 0.95 / 2.5) * 2.5} kg`, r: 1 },
+    { l: `${prescribedLoad} kg · BENCHMARK`, r: 1, rpe: `RPE ${ex.rpeTarget} target` },
+  ];
 
   return (
     <Phone>

@@ -37,6 +37,8 @@ const liftMeta = [
   { key: 'deadlift' as const, name: 'Deadlift' },
 ];
 
+const OHP_KEY = 'overhead_press';
+
 interface LiftInput {
   weight: number;
   reps: number;
@@ -58,6 +60,7 @@ export default function Baselines() {
       squat: { weight: 180, reps: 3, rpe: 8.5 },
       bench: { weight: 125, reps: 4, rpe: 8.0 },
       deadlift: { weight: 210, reps: 2, rpe: 9.0 },
+      [OHP_KEY]: { weight: 60, reps: 5, rpe: 8.0 },
     };
     return defaults[key] ?? { weight: 100, reps: 3, rpe: 8.0 };
   }
@@ -65,14 +68,22 @@ export default function Baselines() {
   const [squat, setSquat] = useState<LiftInput>(defaultLift('squat'));
   const [bench, setBench] = useState<LiftInput>(defaultLift('bench'));
   const [deadlift, setDeadlift] = useState<LiftInput>(defaultLift('deadlift'));
+  const [ohp, setOhp] = useState<LiftInput>(defaultLift(OHP_KEY));
+  const [showOhp, setShowOhp] = useState<boolean>(() => !!profile.e1rm?.[OHP_KEY]);
 
-  const liftData: Record<string, LiftInput> = { squat, bench, deadlift };
-  const setters: Record<string, React.Dispatch<React.SetStateAction<LiftInput>>> = { squat: setSquat, bench: setBench, deadlift: setDeadlift };
+  const liftData: Record<string, LiftInput> = { squat, bench, deadlift, [OHP_KEY]: ohp };
+  const setters: Record<string, React.Dispatch<React.SetStateAction<LiftInput>>> = {
+    squat: setSquat, bench: setBench, deadlift: setDeadlift, [OHP_KEY]: setOhp,
+  };
+
+  const activeMeta = showOhp
+    ? [...liftMeta, { key: OHP_KEY, name: 'Overhead press' }]
+    : liftMeta;
 
   const e1rmResults = useMemo(() => {
     const results: Record<string, ReturnType<typeof ensembleE1RM>> = {};
-    for (const { key } of liftMeta) {
-      const d = key === 'squat' ? squat : key === 'bench' ? bench : deadlift;
+    for (const { key } of activeMeta) {
+      const d = liftData[key];
       results[key] = ensembleE1RM(
         { load: d.weight, reps: d.reps, rpe: d.rpe },
         profile.rpeTable,
@@ -82,7 +93,8 @@ export default function Baselines() {
       );
     }
     return results;
-  }, [squat, bench, deadlift, profile.rpeTable, profile.rpeCalibration, profile.rollingE1rm]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [squat, bench, deadlift, ohp, showOhp, profile.rpeTable, profile.rpeCalibration, profile.rollingE1rm]);
 
   const updateField = (key: string, field: keyof LiftInput, raw: string) => {
     const val = raw === '' ? 0 : Number(raw);
@@ -93,12 +105,16 @@ export default function Baselines() {
   };
 
   const handleContinue = () => {
-    const e1rm: Record<string, number> = {};
-    const rollingE1rm: Record<string, number> = {};
-    for (const { key } of liftMeta) {
+    const e1rm: Record<string, number> = { ...profile.e1rm };
+    const rollingE1rm: Record<string, number> = { ...profile.rollingE1rm };
+    for (const { key } of activeMeta) {
       const r = e1rmResults[key];
       e1rm[key] = Math.round(r.session * 10) / 10;
       rollingE1rm[key] = Math.round(r.rolling * 10) / 10;
+    }
+    if (!showOhp) {
+      delete e1rm[OHP_KEY];
+      delete rollingE1rm[OHP_KEY];
     }
     setProfile({
       e1rm,
@@ -136,14 +152,24 @@ export default function Baselines() {
         Enter a recent <span className="tns-mono" style={{ color: T.text }}>weight × reps × RPE</span> for each lift. We use an Epley/Brzycki/RPE ensemble to estimate your 1RM.
       </div>
 
-      {liftMeta.map(({ key, name }) => {
+      {activeMeta.map(({ key, name }) => {
         const d = liftData[key];
         const e1 = e1rmResults[key];
+        const isOhp = key === OHP_KEY;
         return (
           <div key={key} style={{ border: `1px solid ${T.line}`, marginBottom: 10, padding: '12px 14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <span style={{ fontSize: 13.5, fontWeight: 500 }}>{name}</span>
-              <span className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}>e1RM</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {isOhp && (
+                  <span
+                    onClick={() => setShowOhp(false)}
+                    className="tns-mono"
+                    style={{ fontSize: 9, color: T.bad, letterSpacing: '0.08em', cursor: 'pointer' }}
+                  >× REMOVE</span>
+                )}
+                <span className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}>e1RM</span>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -187,9 +213,14 @@ export default function Baselines() {
         );
       })}
 
-      <div style={{ marginTop: 8, fontSize: 11, color: T.textMute, fontFamily: T.mono, letterSpacing: '0.04em' }}>
-        + ADD OVERHEAD PRESS (optional)
-      </div>
+      {!showOhp && (
+        <div
+          onClick={() => setShowOhp(true)}
+          style={{ marginTop: 8, fontSize: 11, color: T.accent, fontFamily: T.mono, letterSpacing: '0.04em', cursor: 'pointer' }}
+        >
+          + ADD OVERHEAD PRESS (optional)
+        </div>
+      )}
     </OBShell>
   );
 }

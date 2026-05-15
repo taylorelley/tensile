@@ -1,8 +1,8 @@
 import React from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import type { Session } from '../../store';
-import { Phone, TabBar, T, Chart, Spark } from '../../shared';
+import { Phone, TabBar, T, Chart, ChartEmpty, Spark } from '../../shared';
 import { detectPeak, detectStall } from '../../engine';
 
 function weeklyBestE1rm(
@@ -31,36 +31,25 @@ function weeklyBestE1rm(
   });
 }
 
-const HARDCODED_SQUAT = [205, 209, 212, 215, 218, 217, 215];
-const HARDCODED_BENCH = [140, 141, 143, 144, 146, 145, 144];
-const HARDCODED_DEADLIFT = [232, 236, 240, 243, 246, 244, 240];
-
 export default function Performance() {
   const navigate = useNavigate();
-  const location = useLocation();
   const currentBlock = useStore((s) => s.currentBlock);
   const profile = useStore((s) => s.profile);
 
   const sessions = currentBlock?.sessions ?? [];
   const startDate = currentBlock?.startDate ?? '';
 
-  let squatTrend = startDate
+  const squatTrend = startDate
     ? weeklyBestE1rm(sessions, startDate, ['barbell_back_squat'])
     : [];
-  let benchTrend = startDate
+  const benchTrend = startDate
     ? weeklyBestE1rm(sessions, startDate, ['bench_press'])
     : [];
-  let deadliftTrend = startDate
+  const deadliftTrend = startDate
     ? weeklyBestE1rm(sessions, startDate, ['conventional_deadlift'])
     : [];
 
   const squatHasData = squatTrend.some((v) => v > 0);
-  const benchHasData = benchTrend.some((v) => v > 0);
-  const deadliftHasData = deadliftTrend.some((v) => v > 0);
-
-  if (!squatHasData) squatTrend = HARDCODED_SQUAT;
-  if (!benchHasData) benchTrend = HARDCODED_BENCH;
-  if (!deadliftHasData) deadliftTrend = HARDCODED_DEADLIFT;
 
   const blockLabel = currentBlock
     ? `Block ${currentBlock.id.slice(-2)} · ${currentBlock.phase}`
@@ -166,38 +155,46 @@ export default function Performance() {
                 KG
               </span>
             </div>
-            <div
-              className="tns-mono"
-              style={{
-                fontSize: 11,
-                color: squatDelta >= 0 ? T.good : T.bad,
-                marginTop: 6,
-                letterSpacing: '0.06em',
-              }}
-            >
-              {squatDelta >= 0 ? '+' : ''}{squatDelta.toFixed(1)} KG · {Number(squatPct) >= 0 ? '+' : ''}{squatPct}%
-              {squatPeakWeek >= 0 ? ` · PEAK WK ${squatPeakWeek + 1}` : ''}
-            </div>
+            {squatHasData && (
+              <div
+                className="tns-mono"
+                style={{
+                  fontSize: 11,
+                  color: squatDelta >= 0 ? T.good : T.bad,
+                  marginTop: 6,
+                  letterSpacing: '0.06em',
+                }}
+              >
+                {squatDelta >= 0 ? '+' : ''}{squatDelta.toFixed(1)} KG · {Number(squatPct) >= 0 ? '+' : ''}{squatPct}%
+                {squatPeakWeek >= 0 ? ` · PEAK WK ${squatPeakWeek + 1}` : ''}
+              </div>
+            )}
           </div>
         </div>
 
         <div style={{ marginTop: 20 }}>
-          <Chart data={squatTrend} peak={squatPeakWeek >= 0 ? squatPeakWeek : undefined} w={320} h={110} />
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              marginTop: 4,
-              fontFamily: T.mono,
-              fontSize: 9,
-              color: T.textMute,
-              letterSpacing: '0.06em',
-            }}
-          >
-            {squatTrend.map((_, i) => (
-              <span key={i}>WK {i + 1}</span>
-            ))}
-          </div>
+          {squatHasData ? (
+            <>
+              <Chart data={squatTrend} peak={squatPeakWeek >= 0 ? squatPeakWeek : undefined} w={320} h={110} />
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginTop: 4,
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  color: T.textMute,
+                  letterSpacing: '0.06em',
+                }}
+              >
+                {squatTrend.map((_, i) => (
+                  <span key={i}>WK {i + 1}</span>
+                ))}
+              </div>
+            </>
+          ) : (
+            <ChartEmpty message="LOG A SQUAT SESSION TO SEE TRENDS" h={110} />
+          )}
         </div>
 
         {/* Other lifts */}
@@ -224,40 +221,42 @@ export default function Performance() {
               peak: deadliftPeak,
               stall: deadliftStall,
             },
-          ].map((r, i) => (
-            <div
-              key={i}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                padding: '14px 16px',
-                borderBottom: i < 1 ? `1px solid ${T.lineSoft}` : 'none',
-              }}
-            >
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13 }}>{r.l}</div>
-                <div
-                  className="tns-mono"
-                  style={{ fontSize: 10, color: (r as typeof r & { dColor?: string }).dColor ?? T.good, marginTop: 2 }}
-                >
-                  {r.d}
-                  {r.peak ? ' · PEAK' : r.stall ? ' · STALL' : ''}
+          ].map((r, i, arr) => {
+            const hasData = r.s.some(v => v > 0);
+            return (
+              <div
+                key={i}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '14px 16px',
+                  borderBottom: i < arr.length - 1 ? `1px solid ${T.lineSoft}` : 'none',
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13 }}>{r.l}</div>
+                  <div
+                    className="tns-mono"
+                    style={{ fontSize: 10, color: hasData ? r.dColor : T.textMute, marginTop: 2 }}
+                  >
+                    {hasData ? `${r.d}${r.peak ? ' · PEAK' : r.stall ? ' · STALL' : ''}` : 'NO DATA YET'}
+                  </div>
+                </div>
+                <Spark data={hasData ? r.s : []} w={70} h={22} />
+                <div style={{ textAlign: 'right', minWidth: 70 }}>
+                  <span className="tns-serif" style={{ fontSize: 22 }}>
+                    {r.v}
+                  </span>
+                  <span
+                    className="tns-mono"
+                    style={{ fontSize: 9, color: T.textMute, marginLeft: 3 }}
+                  >
+                    KG
+                  </span>
                 </div>
               </div>
-              <Spark data={r.s} w={70} h={22} />
-              <div style={{ textAlign: 'right', minWidth: 70 }}>
-                <span className="tns-serif" style={{ fontSize: 22 }}>
-                  {r.v}
-                </span>
-                <span
-                  className="tns-mono"
-                  style={{ fontSize: 9, color: T.textMute, marginLeft: 3 }}
-                >
-                  KG
-                </span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* TTP */}
@@ -304,7 +303,7 @@ export default function Performance() {
         </div>
       </div>
       <TabBar
-        active={location.pathname === '/lifts' ? 'lifts' : 'block'}
+        active="block"
         onNavigate={(id) => {
           if (id === 'today') navigate('/');
           else if (id === 'block') navigate('/block/performance');

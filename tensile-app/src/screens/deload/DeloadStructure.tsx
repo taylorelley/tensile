@@ -44,11 +44,13 @@ export default function DeloadStructure() {
           <div
             key={i}
             onClick={() => {
-              if (o.t === 'Active deload' || o.t === 'Complete rest') {
+              if (o.t === 'Active deload') {
                 generateDeloadBlock();
                 navigate('/');
               } else if (o.t === 'Pivot block') {
                 navigate('/deload/pivot');
+              } else if (o.t === 'Complete rest') {
+                navigate('/');
               } else {
                 navigate('/');
               }

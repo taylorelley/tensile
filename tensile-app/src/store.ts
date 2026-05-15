@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { ensembleE1RM, DEFAULT_RPE_TABLE, calculateSessionSFI } from './engine';
 import type { SetInput } from './engine';
+import type { CatalogEntry } from './exerciseCatalog';
 
 export type BlockPhase = 'ACCUMULATION' | 'INTENSIFICATION' | 'REALISATION' | 'DELOAD' | 'PIVOT';
 export type BlockType = 'DEVELOPMENT' | 'DELOAD' | 'PIVOT' | 'PEAK';
@@ -53,7 +54,7 @@ export interface Session {
   exercises: SessionExercise[];
   status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETE' | 'SKIPPED';
   currentExerciseIndex?: number;
-  overrides: unknown[];
+  overrides: string[];
 }
 
 export interface Block {
@@ -97,6 +98,7 @@ export interface UserProfile {
   mevEstimates: Record<string, number>;
   mrvEstimates: Record<string, number>;
   accessoryResponsiveness: Record<string, number>;
+  recentProgramme: string;
 }
 
 function createDayPlan(dayIndex: number): { focus: string; exercises: SessionExercise[] } {
@@ -203,6 +205,7 @@ const defaultProfile: UserProfile = {
   mevEstimates: { quads: 10, hamstrings: 8, glutes: 8, pecs: 10, delts: 8, triceps: 8, lats: 10, biceps: 6, core: 8 },
   mrvEstimates: { quads: 22, hamstrings: 20, glutes: 20, pecs: 22, delts: 18, triceps: 20, lats: 22, biceps: 18, core: 20 },
   accessoryResponsiveness: {},
+  recentProgramme: 'Custom RPE',
 };
 
 interface AppState {
@@ -234,6 +237,10 @@ interface AppState {
   /** Set by `startSession` internally; exposed for external override if needed */
   setCurrentSession: (s: Session | null) => void;
 
+  customExercises: CatalogEntry[];
+  addCustomExercise: (entry: Omit<CatalogEntry, 'builtin'>) => void;
+  updateCustomExercise: (id: string, updates: Partial<Omit<CatalogEntry, 'id' | 'builtin'>>) => void;
+  removeCustomExercise: (id: string) => void;
 }
 
 export const useStore = create<AppState>()(
@@ -426,7 +433,7 @@ export const useStore = create<AppState>()(
             )
           : state.blocks;
         set({
-          profile: { ...profile, completedBlocks: (profile.completedBlocks || 0) + 1 },
+          profile: { ...profile, completedBlocks: (profile.completedBlocks || 0) + (prevBlock ? 1 : 0) },
           blocks: [...updatedBlocks, deloadBlock],
           currentBlock: deloadBlock,
           currentSession: null,
@@ -482,7 +489,7 @@ export const useStore = create<AppState>()(
             )
           : state.blocks;
         set({
-          profile: { ...profile, completedBlocks: (profile.completedBlocks || 0) + 1 },
+          profile: { ...profile, completedBlocks: (profile.completedBlocks || 0) + (prevBlock ? 1 : 0) },
           blocks: [...updatedBlocks, pivotBlock],
           currentBlock: pivotBlock,
           currentSession: null,
@@ -492,6 +499,18 @@ export const useStore = create<AppState>()(
       currentSession: null,
       setCurrentSession: (s) => set({ currentSession: s }),
 
+      customExercises: [],
+      addCustomExercise: (entry) => set({
+        customExercises: [...get().customExercises, { ...entry, builtin: false }],
+      }),
+      updateCustomExercise: (id, updates) => set({
+        customExercises: get().customExercises.map(e =>
+          e.id === id && !e.builtin ? { ...e, ...updates } : e
+        ),
+      }),
+      removeCustomExercise: (id) => set({
+        customExercises: get().customExercises.filter(e => e.id !== id || e.builtin),
+      }),
     }),
     {
       name: 'tensile-storage',
@@ -500,6 +519,7 @@ export const useStore = create<AppState>()(
         profile: state.profile,
         blocks: state.blocks,
         currentBlock: state.currentBlock,
+        customExercises: state.customExercises,
       }),
     }
   )

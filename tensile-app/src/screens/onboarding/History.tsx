@@ -37,7 +37,7 @@ export default function History() {
   const profile = useStore(s => s.profile);
   const setProfile = useStore(s => s.setProfile);
 
-  const [selectedProgramme, setSelectedProgramme] = useState('Custom RPE');
+  const [selectedProgramme, setSelectedProgramme] = useState(profile.recentProgramme ?? 'Custom RPE');
 
   // Derive TTP estimate from training age
   const ttpEstimate =
@@ -56,7 +56,7 @@ export default function History() {
   const deloadLabel = isNewUser ? 'FRESH START' : lastDeloadWeeks >= 8 ? '↑ ELEVATED LOAD' : lastDeloadWeeks >= 5 ? 'MODERATE LOAD' : 'LOW LOAD';
 
   const handleContinue = () => {
-    setProfile({ ttpEstimate });
+    setProfile({ ttpEstimate, recentProgramme: selectedProgramme });
     navigate('/onboarding/schedule');
   };
 

@@ -134,7 +134,7 @@ export default function Attempts() {
             RULES
           </span>
           <div style={{ marginTop: 4 }}>
-            IPF · 83 kg raw · 1 min between attempts. Squat/bench/DL openers locked in by warm-up call.
+            {`${profile.federation} · ${profile.weightClass} kg ${(profile.equipment || '').toLowerCase()} · 1 min between attempts. Squat/bench/DL openers locked in by warm-up call.`}
           </div>
         </div>
       </div>
