@@ -47,6 +47,9 @@ import MeetSetup from './screens/meet/MeetSetup';
 import Peaking from './screens/meet/Peaking';
 import Attempts from './screens/meet/Attempts';
 
+// Settings
+import Settings from './screens/Settings';
+
 function App() {
   const onboardingComplete = useStore(s => s.onboardingComplete);
   const currentBlock = useStore(s => s.currentBlock);
@@ -100,6 +103,7 @@ function App() {
           <Route path="/meet/setup" element={<MeetSetup />} />
           <Route path="/meet/peaking" element={<Peaking />} />
           <Route path="/meet/attempts" element={<Attempts />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </>
       )}

@@ -3,6 +3,17 @@ import { useStore } from '../../store';
 import { T, Phone, AppHeader, PrimaryBtn, Spark, TabBar } from '../../shared';
 import { estimateSessionDuration, volumeBudget } from '../../engine';
 
+function NearFailureNudge({ lastAt, now }: { lastAt?: string; now: number }) {
+  if (!lastAt) return null;
+  const weeksSince = (now - new Date(lastAt).getTime()) / (7 * 24 * 60 * 60 * 1000);
+  if (weeksSince < 8) return null;
+  return (
+    <div style={{ padding: '10px 12px', border: `1px solid ${T.caution}`, marginBottom: 14, fontSize: 11, color: T.caution }}>
+      No near-failure set logged in {Math.floor(weeksSince)} weeks. Log a set at RPE 9.5+ to recalibrate RPE confidence.
+    </div>
+  );
+}
+
 function getDayName(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00');
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -289,17 +300,21 @@ export default function Today() {
           })()}
         </div>
 
-        {/* Lift dashboard */}
+        {/* Lift dashboard with confidence band (P2.5.8). */}
         <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Rolling e1RM</div>
         <div style={{ border: `1px solid ${T.line}`, marginBottom: 14 }}>
           {lifts.map((r, i) => {
             const hasData = r.s.length > 0;
+            // Confidence is "high" with ≥ 8 weeks of data, "medium" with ≥ 3, "low" otherwise.
+            const conf = r.s.length >= 8 ? 'HIGH' : r.s.length >= 3 ? 'MED' : 'LOW';
+            const confColor = conf === 'HIGH' ? T.good : conf === 'MED' ? T.caution : T.textMute;
             return (
               <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '14px 16px', borderBottom: i < 2 ? `1px solid ${T.lineSoft}` : 'none', gap: 14 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>{r.l}</div>
                   <div className="tns-mono" style={{ fontSize: 9.5, color: hasData ? T.good : T.textMute, marginTop: 2, letterSpacing: '0.04em' }}>
                     {hasData ? `${r.d} · ${r.s.length}WK` : 'NO DATA YET'}
+                    <span style={{ color: confColor, marginLeft: 8 }}>CONF {conf}</span>
                   </div>
                 </div>
                 <Spark data={r.s} w={68} h={22} />
@@ -311,6 +326,7 @@ export default function Today() {
             );
           })}
         </div>
+        <NearFailureNudge lastAt={profile.rpeCalibration?.lastNearFailureSetAt} now={new Date().getTime()} />
 
         {/* Block progress strip */}
         <div className="tns-eyebrow" style={{ marginBottom: 8 }}>Block progress</div>

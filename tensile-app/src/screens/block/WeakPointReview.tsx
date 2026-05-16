@@ -121,6 +121,9 @@ export default function WeakPointReview() {
               >
                 <span style={{ fontSize: 12.5, flex: 1, textTransform: 'capitalize' }}>
                   {name.replace(/_/g, ' ')}
+                  {profile.accessoryResponsivenessExploratory?.[name] && (
+                    <span className="tns-mono" style={{ fontSize: 8.5, color: T.caution, marginLeft: 8, letterSpacing: '0.08em' }}>EXPLORATORY</span>
+                  )}
                 </span>
                 {/* mini correlation bar */}
                 <div

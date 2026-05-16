@@ -56,6 +56,24 @@ export default function Pivot() {
             sensible re-sensitisation tool.
           </div>
         </div>
+        {/* P3.6.4: why pivot ≠ deload. */}
+        <div
+          style={{
+            padding: '12px 14px',
+            border: `1px solid ${T.line}`,
+            fontSize: 11.5,
+            color: T.textDim,
+            lineHeight: 1.55,
+            marginBottom: 16,
+          }}
+        >
+          <span className="tns-eyebrow">Why this is different from a deload</span>
+          <div style={{ marginTop: 6 }}>
+            A deload reduces volume on the same exercises to restore recovery. A pivot block changes the <em>nature</em>
+            of the stimulus — different variations, slightly different rep ranges — to restore training sensitivity without
+            stepping off the gas. You should expect to feel fresh by week two, not flat.
+          </div>
+        </div>
 
         {/* Block params */}
         <div

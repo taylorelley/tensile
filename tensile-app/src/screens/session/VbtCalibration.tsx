@@ -38,6 +38,12 @@ export default function VbtCalibration() {
     { load: 0, velocity: 0 },
   ]);
   const [target, setTarget] = useState<CalibrationTarget>('all');
+  // P1.4.5: equipment captured during calibration; LVP refuses to apply if
+  // equipment at prescription time differs.
+  const [straps, setStraps] = useState(false);
+  const [belt, setBelt] = useState(profile.belt);
+  const [sleeves, setSleeves] = useState(profile.kneeSleeves === 'sleeves');
+  const [wraps, setWraps] = useState(profile.kneeSleeves === 'wraps');
 
   const validPoints = points.filter(p => p.load > 0 && p.velocity > 0);
   const canCalibrate = validPoints.length >= 2;
@@ -59,6 +65,8 @@ export default function VbtCalibration() {
       slope: Math.round(regression.slope * 1000) / 1000,
       intercept: Math.round(regression.intercept * 1000) / 1000,
       n: validPoints.length,
+      rSquared: Math.round(regression.r2 * 1000) / 1000,
+      equipment: { straps, belt, sleeves, wraps },
     };
     if (target === 'all') {
       setProfile({ lvProfile: fitted });
@@ -149,6 +157,31 @@ export default function VbtCalibration() {
           >
             + ADD SET →
           </span>
+        </div>
+
+        {/* P1.4.5 equipment capture. */}
+        <div className="tns-eyebrow" style={{ marginBottom: 8 }}>Equipment used in calibration</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, marginBottom: 18 }}>
+          {([
+            { id: 'straps', label: 'Straps', value: straps, set: setStraps },
+            { id: 'belt', label: 'Belt', value: belt, set: setBelt },
+            { id: 'sleeves', label: 'Sleeves', value: sleeves, set: setSleeves },
+            { id: 'wraps', label: 'Wraps', value: wraps, set: setWraps },
+          ] as const).map(opt => (
+            <div
+              key={opt.id}
+              onClick={() => opt.set(!opt.value)}
+              style={{
+                padding: '10px 0', textAlign: 'center', cursor: 'pointer',
+                border: `1px solid ${opt.value ? T.accent : T.line}`,
+                background: opt.value ? T.accent : 'transparent',
+                color: opt.value ? '#1a0f08' : T.text,
+                fontFamily: T.mono, fontSize: 10, fontWeight: 500,
+              }}
+            >
+              {opt.label}
+            </div>
+          ))}
         </div>
 
         {regression && (

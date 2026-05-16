@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
-import { calculateRCS } from '../../engine';
+import { calculateRCS, hrvCoefficientOfVariation } from '../../engine';
 import { T, Phone, AppHeader, PrimaryBtn, Spark } from '../../shared';
 
 function WellnessSlider({ label, value, low, high, onChange }: {
@@ -114,13 +114,14 @@ export default function Wellness() {
   const profile = useStore(s => s.profile);
   const setProfile = useStore(s => s.setProfile);
 
-  const defaults = currentSession?.wellness ?? { sleepQuality: 7, overallFatigue: 6, muscleSoreness: 5, motivation: 8, stress: 6 };
+  const defaults = currentSession?.wellness ?? { sleepQuality: 7, overallFatigue: 6, muscleSoreness: 5, motivation: 8, stress: 6, jointPain: 1 };
 
   const [sleepQuality, setSleepQuality] = useState(defaults.sleepQuality);
   const [overallFatigue, setOverallFatigue] = useState(defaults.overallFatigue);
   const [muscleSoreness, setMuscleSoreness] = useState(defaults.muscleSoreness);
   const [motivation, setMotivation] = useState(defaults.motivation);
   const [stress, setStress] = useState(defaults.stress);
+  const [jointPain, setJointPain] = useState(defaults.jointPain ?? 1);
   const [showHrvInput, setShowHrvInput] = useState(false);
   const [hrvInput, setHrvInput] = useState<number | undefined>(undefined);
 
@@ -142,7 +143,7 @@ export default function Wellness() {
   }
 
   const handleCompute = () => {
-    const wellness = { sleepQuality, overallFatigue, muscleSoreness, motivation, stress, hrvRmssd: hrvInput };
+    const wellness = { sleepQuality, overallFatigue, muscleSoreness, motivation, stress, hrvRmssd: hrvInput, jointPain };
     const completed = block.sessions
       .filter(s => s.status === 'COMPLETE')
       .sort((a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime());
@@ -154,21 +155,28 @@ export default function Wellness() {
       const avgLast = last3.reduce((sum, s) => sum + (s.srpe ?? 0), 0) / last3.length;
       rpeDrift = Math.max(0, avgLast - avgFirst);
     }
-    const wellnessComposite = (sleepQuality + overallFatigue + muscleSoreness + motivation + stress) / 5;
-    const baseHrv = 62;
-    const estimatedHrv7day = baseHrv + Math.round((wellnessComposite - 6.5) * 1.5);
-
-    // Store real HRV in profile history and recompute 28-day baseline
+    // P0.3.1: HRV contributes only when a real reading exists. No synthetic
+    // estimate is derived from the wellness composite.
     let hrv28DayBaseline = profile.hrv28DayBaseline;
+    let rolling7DayHrv: number | undefined;
     if (hrvInput !== undefined) {
       const newHistory = [...(profile.hrvHistory || []), hrvInput].slice(-28);
       hrv28DayBaseline = newHistory.length > 0
         ? Math.round(newHistory.reduce((a, b) => a + b, 0) / newHistory.length * 10) / 10
         : undefined;
-      setProfile({ hrvHistory: newHistory, hrv28DayBaseline });
+      const last7 = newHistory.slice(-7);
+      rolling7DayHrv = last7.length > 0
+        ? Math.round(last7.reduce((a, b) => a + b, 0) / last7.length * 10) / 10
+        : undefined;
+      // P2.5.6: persist Coefficient of Variation alongside the baseline.
+      const hrv28DayCv = newHistory.length >= 4 ? Math.round(hrvCoefficientOfVariation(newHistory) * 1000) / 1000 : undefined;
+      setProfile({ hrvHistory: newHistory, hrv28DayBaseline, hrv28DayCv });
+    } else if ((profile.hrvHistory ?? []).length >= 3) {
+      const last7 = (profile.hrvHistory ?? []).slice(-7);
+      rolling7DayHrv = Math.round(last7.reduce((a, b) => a + b, 0) / last7.length * 10) / 10;
     }
 
-    const rcs = calculateRCS(wellness, estimatedHrv7day, hrv28DayBaseline ?? baseHrv, rpeDrift);
+    const rcs = calculateRCS(wellness, rolling7DayHrv, hrv28DayBaseline, rpeDrift);
     updateSession(block.id, currentSession.id, { wellness, rcs, wellnessCompleted: true });
     navigate('/session/readiness');
   };
@@ -185,6 +193,7 @@ export default function Wellness() {
         <WellnessSlider label="Muscle soreness" value={muscleSoreness} low="SEVERE" high="NONE" onChange={setMuscleSoreness} />
         <WellnessSlider label="Motivation" value={motivation} low="POOR" high="HIGH" onChange={setMotivation} />
         <WellnessSlider label="Non-training stress" value={stress} low="EXTREME" high="NONE" onChange={setStress} />
+        <WellnessSlider label="Joint pain" value={jointPain} low="NONE" high="SEVERE" onChange={setJointPain} />
 
         {/* Manual HRV entry */}
         <div style={{ marginTop: 14, marginBottom: 4 }}>
@@ -212,28 +221,32 @@ export default function Wellness() {
           )}
         </div>
 
-        {/* HRV estimate derived from wellness composite */}
+        {/* P0.3.1: real HRV history only — no synthetic estimate from wellness. */}
         {(() => {
-          const wellnessComposite = (sleepQuality + overallFatigue + muscleSoreness + motivation + stress) / 5;
-          const baseHrv = 62;
-          const hrvDelta = Math.round((wellnessComposite - 6.5) * 1.5);
-          const currentHrv = baseHrv + hrvDelta;
-          const hrvSpark = Array.from({ length: 7 }, (_, i) => {
-            const dayOffset = (6 - i) * 0.5;
-            const jitter = Math.sin(i * 2.5) * 1.2;
-            return Math.max(50, Math.min(75, Math.round(currentHrv + dayOffset + jitter)));
-          });
-          const prevAvg = hrvSpark.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
-          const currAvg = hrvSpark.slice(-3).reduce((a, b) => a + b, 0) / 3;
+          const history = profile.hrvHistory ?? [];
+          if (history.length === 0) {
+            return (
+              <div style={{ padding: '12px 14px', border: `1px solid ${T.line}`, marginTop: 10 }}>
+                <div className="tns-eyebrow" style={{ marginBottom: 4 }}>HRV</div>
+                <div style={{ fontSize: 11, color: T.textDim, lineHeight: 1.45 }}>
+                  Not available today — score uses subjective wellness only. Enter rMSSD above to enable HRV-adjusted readiness.
+                </div>
+              </div>
+            );
+          }
+          const last7 = history.slice(-7);
+          const currentHrv = last7[last7.length - 1];
+          const prevAvg = last7.length >= 6 ? last7.slice(0, 3).reduce((a, b) => a + b, 0) / 3 : currentHrv;
+          const currAvg = last7.length >= 3 ? last7.slice(-3).reduce((a, b) => a + b, 0) / Math.min(3, last7.length) : currentHrv;
           const pctChange = prevAvg > 0 ? ((currAvg - prevAvg) / prevAvg) * 100 : 0;
           const changeColor = pctChange >= -2 ? T.good : pctChange >= -5 ? T.caution : T.bad;
           return (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', border: `1px solid ${T.line}`, marginTop: 10 }}>
               <div>
-                <div className="tns-eyebrow" style={{ marginBottom: 4 }}>HRV · estimated</div>
+                <div className="tns-eyebrow" style={{ marginBottom: 4 }}>HRV · last 7 days</div>
                 <div className="tns-mono" style={{ fontSize: 13 }}>{currentHrv} ms<span style={{ color: changeColor, marginLeft: 8 }}>{pctChange >= 0 ? '+' : ''}{pctChange.toFixed(1)}%</span></div>
               </div>
-              <Spark data={hrvSpark} color={changeColor} w={70} h={22} />
+              <Spark data={last7} color={changeColor} w={70} h={22} />
             </div>
           );
         })()}
