@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { ensembleE1RM, DEFAULT_RPE_TABLE, calculateSessionSFI, calculateDeloadScore, deloadRecommendation, detectPeak, detectStall, personalizeRpeTable, estimateSessionDuration, isRpeOutlier, getAccessoryTemplate, pearsonCorrelation } from './engine';
+import { ensembleE1RM, DEFAULT_RPE_TABLE, calculateSessionSFI, calculateDeloadScore, deloadRecommendation, detectPeak, detectStall, personalizeRpeTable, estimateSessionDuration, detectRpeOutlier, getAccessoryTemplate, pearsonCorrelation, inferLiftKey, resolveLvProfile, type LiftKey, type LvProfile } from './engine';
 import { idbStorage } from './idbStorage';
 import type { SetInput } from './engine';
 import type { CatalogEntry } from './exerciseCatalog';
@@ -33,7 +33,10 @@ export interface SetLog {
   actualReps: number;
   prescribedRpeTarget: number;
   actualRpe: number;
+  /** Mean propulsive velocity over the set (m/s, optional) */
   velocity?: number;
+  /** Last-rep velocity (m/s, optional) — used for objective RPE calibration when set */
+  lastRepVelocity?: number;
   e1rm: number;
   sfi: number;
 }
@@ -103,12 +106,15 @@ export interface UserProfile {
   rollingE1rm: Record<string, number>;
   ttpEstimate: number;
   ttpHistory: number[];
+  /** Most recent off-target peak observation waiting for a second consecutive block to confirm
+   *  before the ttpEstimate is shifted. Cleared on confirmation or when a contradictory peak arrives. */
+  ttpPendingPeak?: { peakWeek: number; observedAt: string };
   meetDate?: string;
   federation: string;
   equipment: string;
   weightClass: string;
   completedBlocks: number;
-  rpeCalibration: { sessions: number; mae: number };
+  rpeCalibration: { sessions: number; mae: number; lrvDivergences?: number };
   rpeTable: Record<string, number>;
   rpeTablePersonalised: boolean;
   mevEstimates: Record<string, number>;
@@ -121,8 +127,10 @@ export interface UserProfile {
   hrvHistory?: number[];
   /** True when a peaking plan is active — locks development block generation */
   peakingActive?: boolean;
-  /** Load-velocity profile for VBT e1RM estimation { slope, intercept, n } */
-  lvProfile?: { slope: number; intercept: number; n: number };
+  /** Global load-velocity profile for VBT e1RM estimation (fallback / legacy single-profile users) */
+  lvProfile?: LvProfile;
+  /** Per-lift load-velocity profiles; resolved before the global lvProfile when present */
+  lvProfiles?: Partial<Record<LiftKey, LvProfile>>;
 }
 
 function trainingAgeToTtp(age: string): number {
@@ -485,37 +493,31 @@ export const useStore = create<AppState>()(
 
         // Update e1RM for primary and assistance lifts (map to their primary lift category)
         const profile = state.profile;
-        const liftMap: Record<string, string> = {
-          barbell_back_squat: 'squat',
-          front_squat: 'squat',
-          paused_squat: 'squat',
-          low_bar_squat: 'squat',
-          tempo_squat: 'squat',
-          bench_press: 'bench',
-          close_grip_bench: 'bench',
-          paused_bench: 'bench',
-          spoto_press: 'bench',
-          incline_press: 'bench',
-          overhead_press: 'bench',
-          conventional_deadlift: 'deadlift',
-          sumo_deadlift: 'deadlift',
-          deficit_deadlift: 'deadlift',
-          snatch_grip_deadlift: 'deadlift',
-          block_pull: 'deadlift',
-          romanian_deadlift: 'deadlift',
-        };
-        const lift = liftMap[setLog.exerciseId];
+        const lift = inferLiftKey(setLog.exerciseId);
         let newProfile = profile;
         if (lift) {
+          const lvProfile = resolveLvProfile(profile, lift);
           const result = ensembleE1RM(
-            { load: setLog.actualLoad, reps: setLog.actualReps, rpe: setLog.actualRpe },
+            { load: setLog.actualLoad, reps: setLog.actualReps, rpe: setLog.actualRpe, velocity: setLog.velocity },
             profile.rpeTable,
             profile.rpeCalibration,
             profile.rollingE1rm[lift] || 200,
-            0.3
+            0.3,
+            lvProfile
           );
-          // Personalise RPE table from observed performance (skip outliers)
-          const outlier = isRpeOutlier(setLog.actualLoad, setLog.actualReps, setLog.actualRpe, result.session, profile.rpeTable);
+          // Personalise RPE table from observed performance (skip outliers).
+          // Combines a 15% load-deviation check with an LRV-based velocity check when both
+          // last-rep velocity and a calibrated lvProfile (n ≥ 10) are present.
+          const outlierReason = detectRpeOutlier(
+            setLog.actualLoad,
+            setLog.actualReps,
+            setLog.actualRpe,
+            result.session,
+            profile.rpeTable,
+            setLog.lastRepVelocity,
+            lvProfile
+          );
+          const outlier = outlierReason !== 'none';
           let updatedRpeTable = profile.rpeTable;
           let isPersonalised = profile.rpeTablePersonalised;
           if (!outlier) {
@@ -529,6 +531,7 @@ export const useStore = create<AppState>()(
             updatedRpeTable = personalization.table;
             isPersonalised = profile.rpeTablePersonalised || personalization.isPersonalised;
           }
+          const lrvFailed = outlierReason === 'velocity' || outlierReason === 'both';
           newProfile = {
             ...profile,
             e1rm: { ...profile.e1rm, [lift]: Math.round(result.session * 10) / 10 },
@@ -538,10 +541,17 @@ export const useStore = create<AppState>()(
             rpeCalibration: {
               ...profile.rpeCalibration,
               sessions: profile.rpeCalibration.sessions + 1,
+              lrvDivergences: (profile.rpeCalibration.lrvDivergences ?? 0) + (lrvFailed ? 1 : 0),
             },
           };
           if (outlier) {
-            updates.overrides = [...(session.overrides || []), 'RPE outlier — table not updated'];
+            const msg =
+              outlierReason === 'velocity'
+                ? 'RPE outlier (velocity disagrees) — table not updated'
+                : outlierReason === 'both'
+                  ? 'RPE outlier (load + velocity disagree) — table not updated'
+                  : 'RPE outlier — table not updated';
+            updates.overrides = [...(session.overrides || []), msg];
           }
         }
 
@@ -678,9 +688,11 @@ export const useStore = create<AppState>()(
         }
         const prevBlock = state.currentBlock;
 
-        // Detect peak from previous block to update TTP
+        // Detect peak from previous block to update TTP — gated by two-block confirmation
         let updatedTtpHistory = [...profile.ttpHistory];
         let updatedTtpEstimate = profile.ttpEstimate;
+        let updatedPendingPeak: UserProfile['ttpPendingPeak'] = profile.ttpPendingPeak;
+        let pendingTtpAudit: { ruleId: string; trigger: string; action: string } | null = null;
         if (prevBlock && prevBlock.type === 'DEVELOPMENT') {
           const start = new Date(prevBlock.startDate).getTime();
           const primaryIds = ['barbell_back_squat', 'bench_press', 'conventional_deadlift'];
@@ -701,11 +713,54 @@ export const useStore = create<AppState>()(
             if (filtered.length >= 3 && detectPeak(filtered, profile.ttpEstimate, prevBlock.week)) {
               const peakWeek = filtered.indexOf(Math.max(...filtered)) + 1;
               updatedTtpHistory.push(peakWeek);
-              // EWMA update with alpha=0.4
-              if (updatedTtpHistory.length === 1) {
-                updatedTtpEstimate = peakWeek;
+
+              // Confirmation gate (Plan §3): only mutate ttpEstimate when two consecutive blocks
+              // peak off-target in the same direction within ±1 week of each other. The first
+              // off-target observation is held as a pending candidate.
+              const onTarget = Math.abs(peakWeek - profile.ttpEstimate) < 0.5;
+              if (onTarget) {
+                // Peak agrees with current estimate — clear any pending candidate, no update.
+                if (updatedPendingPeak) {
+                  pendingTtpAudit = {
+                    ruleId: 'TTP_CANDIDATE_CLEARED',
+                    trigger: `Peak at wk ${peakWeek} matches TTP ${profile.ttpEstimate}; pending candidate from ${updatedPendingPeak.observedAt} discarded`,
+                    action: `ttpEstimate stable at ${profile.ttpEstimate}`,
+                  };
+                }
+                updatedPendingPeak = undefined;
+              } else if (!updatedPendingPeak) {
+                // First off-target observation — record as candidate, do not move estimate.
+                updatedPendingPeak = { peakWeek, observedAt: new Date().toISOString() };
+                pendingTtpAudit = {
+                  ruleId: 'TTP_CANDIDATE_RECORDED',
+                  trigger: `Off-target peak at wk ${peakWeek} (TTP ${profile.ttpEstimate})`,
+                  action: `Pending confirmation from next block; ttpEstimate unchanged`,
+                };
               } else {
-                updatedTtpEstimate = Math.round((0.4 * peakWeek + 0.6 * updatedTtpEstimate) * 10) / 10;
+                const prevPeak = updatedPendingPeak.peakWeek;
+                const sameDirection =
+                  (prevPeak < profile.ttpEstimate && peakWeek < profile.ttpEstimate) ||
+                  (prevPeak > profile.ttpEstimate && peakWeek > profile.ttpEstimate);
+                const consistent = Math.abs(prevPeak - peakWeek) <= 1;
+                if (sameDirection && consistent) {
+                  // Confirmed drift — apply EWMA over both observations (α=0.4).
+                  const afterFirst = Math.round((0.4 * prevPeak + 0.6 * profile.ttpEstimate) * 10) / 10;
+                  updatedTtpEstimate = Math.round((0.4 * peakWeek + 0.6 * afterFirst) * 10) / 10;
+                  updatedPendingPeak = undefined;
+                  pendingTtpAudit = {
+                    ruleId: 'TTP_ESTIMATE_UPDATED',
+                    trigger: `Confirmed off-target peaks: wk ${prevPeak} then wk ${peakWeek} (TTP was ${profile.ttpEstimate})`,
+                    action: `ttpEstimate updated to ${updatedTtpEstimate}`,
+                  };
+                } else {
+                  // Inconsistent (straddles estimate or jumps >1 wk) — discard old candidate, hold new one.
+                  updatedPendingPeak = { peakWeek, observedAt: new Date().toISOString() };
+                  pendingTtpAudit = {
+                    ruleId: 'TTP_CANDIDATE_REPLACED',
+                    trigger: `Inconsistent peaks (wk ${prevPeak} then wk ${peakWeek}); previous candidate discarded`,
+                    action: `New pending candidate at wk ${peakWeek}; ttpEstimate unchanged`,
+                  };
+                }
               }
               break; // Use first primary lift that peaks
             }
@@ -771,11 +826,24 @@ export const useStore = create<AppState>()(
         const nextPhase = phaseOrder[completedCount % 3];
         const block = generateBlock({ ...profile, ttpEstimate: updatedTtpEstimate, ttpHistory: updatedTtpHistory }, nextPhase);
         const updatedBlocks = prevBlock
-          ? state.blocks.map(b =>
-              b.id === prevBlock.id
-                ? { ...b, status: 'COMPLETE' as const, endDate: new Date().toISOString().split('T')[0] }
-                : b
-            )
+          ? state.blocks.map(b => {
+              if (b.id !== prevBlock.id) return b;
+              const auditExtra = pendingTtpAudit
+                ? [{
+                    timestamp: new Date().toISOString(),
+                    ruleId: pendingTtpAudit.ruleId,
+                    trigger: pendingTtpAudit.trigger,
+                    action: pendingTtpAudit.action,
+                    evidenceTier: 'SYSTEM',
+                  }]
+                : [];
+              return {
+                ...b,
+                status: 'COMPLETE' as const,
+                endDate: new Date().toISOString().split('T')[0],
+                auditLog: [...b.auditLog, ...auditExtra],
+              };
+            })
           : state.blocks;
         set({
           profile: {
@@ -783,6 +851,7 @@ export const useStore = create<AppState>()(
             completedBlocks: (profile.completedBlocks || 0) + (prevBlock ? 1 : 0),
             ttpEstimate: updatedTtpEstimate,
             ttpHistory: updatedTtpHistory,
+            ttpPendingPeak: updatedPendingPeak,
             accessoryResponsiveness: updatedAccessoryResponsiveness,
           },
           blocks: [...updatedBlocks, block],

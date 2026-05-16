@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
+import type { LiftKey } from '../../engine';
 import { T, Phone, AppHeader, PrimaryBtn } from '../../shared';
 
 interface CalibrationPoint {
   load: number;
   velocity: number;
 }
+
+type CalibrationTarget = 'all' | LiftKey;
 
 function linearRegression(points: CalibrationPoint[]): { slope: number; intercept: number; r2: number } {
   const n = points.length;
@@ -34,6 +37,7 @@ export default function VbtCalibration() {
     { load: 0, velocity: 0 },
     { load: 0, velocity: 0 },
   ]);
+  const [target, setTarget] = useState<CalibrationTarget>('all');
 
   const validPoints = points.filter(p => p.load > 0 && p.velocity > 0);
   const canCalibrate = validPoints.length >= 2;
@@ -51,22 +55,57 @@ export default function VbtCalibration() {
 
   const handleSave = () => {
     if (!regression) return;
-    setProfile({
-      lvProfile: {
-        slope: Math.round(regression.slope * 1000) / 1000,
-        intercept: Math.round(regression.intercept * 1000) / 1000,
-        n: validPoints.length,
-      },
-    });
+    const fitted = {
+      slope: Math.round(regression.slope * 1000) / 1000,
+      intercept: Math.round(regression.intercept * 1000) / 1000,
+      n: validPoints.length,
+    };
+    if (target === 'all') {
+      setProfile({ lvProfile: fitted });
+    } else {
+      setProfile({
+        lvProfiles: { ...(profile.lvProfiles ?? {}), [target]: fitted },
+      });
+    }
     navigate(-1);
   };
+
+  const targetOptions: { id: CalibrationTarget; label: string }[] = [
+    { id: 'all', label: 'All lifts' },
+    { id: 'squat', label: 'Squat' },
+    { id: 'bench', label: 'Bench' },
+    { id: 'deadlift', label: 'Deadlift' },
+  ];
 
   return (
     <Phone>
       <AppHeader eyebrow="VBT" title="Calibrate VBT" back onBack={() => navigate(-1)} />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
-        <div style={{ fontSize: 12, color: T.textDim, marginBottom: 24, lineHeight: 1.55 }}>
-          Enter at least 2 sets with known load and measured mean propulsive velocity. The app will build a load-velocity profile for e1RM estimation.
+        <div style={{ fontSize: 12, color: T.textDim, marginBottom: 14, lineHeight: 1.55 }}>
+          Enter at least 2 sets with known load and measured mean propulsive velocity. The app will build a load-velocity profile for e1RM estimation. Per-lift profiles are preferred for LRV-based RPE calibration.
+        </div>
+
+        {/* Target picker — which lift this profile is for */}
+        <div className="tns-eyebrow" style={{ marginBottom: 6 }}>Target lift</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, marginBottom: 18 }}>
+          {targetOptions.map(opt => {
+            const selected = target === opt.id;
+            return (
+              <div
+                key={opt.id}
+                onClick={() => setTarget(opt.id)}
+                style={{
+                  padding: '10px 0', textAlign: 'center', cursor: 'pointer',
+                  border: `1px solid ${selected ? T.accent : T.line}`,
+                  background: selected ? T.accent : 'transparent',
+                  color: selected ? '#1a0f08' : T.text,
+                  fontFamily: T.mono, fontSize: 11, fontWeight: 500,
+                }}
+              >
+                {opt.label}
+              </div>
+            );
+          })}
         </div>
 
         {points.map((p, i) => (
@@ -142,13 +181,23 @@ export default function VbtCalibration() {
         )}
 
         {profile.lvProfile && (
-          <div style={{ padding: '12px 14px', background: T.surface, borderLeft: `2px solid ${T.good}`, marginBottom: 18 }}>
-            <span className="tns-mono" style={{ fontSize: 9, color: T.good, letterSpacing: '0.08em' }}>ACTIVE PROFILE</span>
+          <div style={{ padding: '12px 14px', background: T.surface, borderLeft: `2px solid ${T.good}`, marginBottom: 10 }}>
+            <span className="tns-mono" style={{ fontSize: 9, color: T.good, letterSpacing: '0.08em' }}>FALLBACK PROFILE · ALL LIFTS</span>
             <div style={{ marginTop: 4, fontSize: 11, color: T.textDim }}>
               {profile.lvProfile.n} sets · slope {profile.lvProfile.slope} · intercept {profile.lvProfile.intercept}
             </div>
           </div>
         )}
+        {profile.lvProfiles && Object.entries(profile.lvProfiles).map(([liftId, lv]) => (
+          lv ? (
+            <div key={liftId} style={{ padding: '12px 14px', background: T.surface, borderLeft: `2px solid ${T.good}`, marginBottom: 10 }}>
+              <span className="tns-mono" style={{ fontSize: 9, color: T.good, letterSpacing: '0.08em' }}>{liftId.toUpperCase()} PROFILE</span>
+              <div style={{ marginTop: 4, fontSize: 11, color: T.textDim }}>
+                {lv.n} sets · slope {lv.slope} · intercept {lv.intercept}
+              </div>
+            </div>
+          ) : null
+        ))}
       </div>
       <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}` }}>
         <PrimaryBtn dim={!canCalibrate} onClick={handleSave}>

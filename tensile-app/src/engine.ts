@@ -5,6 +5,33 @@ export interface SetInput {
   reps: number;
   rpe: number;
   velocity?: number;
+  /** Optional last-rep velocity (m/s) for objective RPE calibration */
+  lastRepVelocity?: number;
+}
+
+export interface LvProfile {
+  slope: number;
+  intercept: number;
+  n: number;
+}
+
+export type LiftKey = 'squat' | 'bench' | 'deadlift';
+
+/** Infer the primary-lift bucket an exerciseId belongs to. Returns undefined for accessories. */
+export function inferLiftKey(exerciseId: string): LiftKey | undefined {
+  if (exerciseId.includes('squat') || exerciseId === 'front_squat' || exerciseId === 'paused_squat') return 'squat';
+  if (exerciseId.includes('deadlift') || exerciseId === 'romanian_deadlift') return 'deadlift';
+  if (exerciseId.includes('bench') || exerciseId.includes('press')) return 'bench';
+  return undefined;
+}
+
+/** Resolve the most-specific load-velocity profile available: per-lift first, then global fallback. */
+export function resolveLvProfile(
+  profiles: { lvProfile?: LvProfile; lvProfiles?: Partial<Record<LiftKey, LvProfile>> },
+  liftKey?: LiftKey
+): LvProfile | undefined {
+  if (liftKey && profiles.lvProfiles?.[liftKey]) return profiles.lvProfiles[liftKey];
+  return profiles.lvProfile;
 }
 
 export interface e1RMResult {
@@ -284,6 +311,117 @@ export function detectStall(e1rmTrend: number[], blockWeek: number): boolean {
   return Math.abs(slope) < 0.5 && Math.max(...e1rmTrend) <= e1rmTrend[0] * 1.01;
 }
 
+// §6.7 Acute:Chronic Workload Ratio (EWMA, Williams et al. 2017)
+
+export interface AclrInput {
+  /** YYYY-MM-DD or any Date-parseable string */
+  date: string;
+  /** Per-session sRPE-load (preferred) or SFI fallback */
+  load: number;
+}
+
+export interface AclrResult {
+  acute: number;
+  chronic: number;
+  ratio: number;
+  /** True while the chronic baseline has < 14 days of data — ratio is unreliable */
+  calibrating: boolean;
+}
+
+/** Compute EWMA-based acute:chronic workload ratio over daily session loads.
+ *  λ_acute  = 2/(7+1)  = 0.25   (7-day half-life)
+ *  λ_chronic = 2/(28+1) ≈ 0.069 (28-day half-life)
+ *  Days without sessions contribute load = 0 (decay continues). */
+export function computeEwmaAclr(
+  sessions: AclrInput[],
+  referenceDate: Date = new Date()
+): AclrResult {
+  const lambdaAcute = 2 / (7 + 1);
+  const lambdaChronic = 2 / (28 + 1);
+
+  if (sessions.length === 0) {
+    return { acute: 0, chronic: 0, ratio: 0, calibrating: true };
+  }
+
+  const sorted = [...sessions]
+    .filter(s => s.date && s.load >= 0)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  if (sorted.length === 0) {
+    return { acute: 0, chronic: 0, ratio: 0, calibrating: true };
+  }
+
+  const firstDay = new Date(sorted[0].date);
+  firstDay.setHours(0, 0, 0, 0);
+  const refDay = new Date(referenceDate);
+  refDay.setHours(0, 0, 0, 0);
+  const totalDays = Math.floor((refDay.getTime() - firstDay.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  if (totalDays <= 0) {
+    return { acute: 0, chronic: 0, ratio: 0, calibrating: true };
+  }
+
+  // Bucket loads per day (summed if multiple sessions)
+  const dailyLoad: number[] = Array(totalDays).fill(0);
+  for (const s of sorted) {
+    const day = new Date(s.date);
+    day.setHours(0, 0, 0, 0);
+    const idx = Math.floor((day.getTime() - firstDay.getTime()) / (1000 * 60 * 60 * 24));
+    if (idx >= 0 && idx < totalDays) dailyLoad[idx] += s.load;
+  }
+
+  let acute = 0;
+  let chronic = 0;
+  for (const load of dailyLoad) {
+    acute = lambdaAcute * load + (1 - lambdaAcute) * acute;
+    chronic = lambdaChronic * load + (1 - lambdaChronic) * chronic;
+  }
+
+  const ratio = chronic > 0 ? acute / chronic : 0;
+  const calibrating = totalDays < 14;
+  return { acute, chronic, ratio, calibrating };
+}
+
+/** Build a daily ACLR trajectory (one ratio per day after the first) for charting.
+ *  Returns ratios indexed by day relative to the first session date. */
+export function ewmaAclrSeries(
+  sessions: AclrInput[],
+  referenceDate: Date = new Date()
+): { ratios: number[]; calibratingDays: number } {
+  const lambdaAcute = 2 / (7 + 1);
+  const lambdaChronic = 2 / (28 + 1);
+
+  if (sessions.length === 0) return { ratios: [], calibratingDays: 0 };
+
+  const sorted = [...sessions]
+    .filter(s => s.date && s.load >= 0)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  if (sorted.length === 0) return { ratios: [], calibratingDays: 0 };
+
+  const firstDay = new Date(sorted[0].date);
+  firstDay.setHours(0, 0, 0, 0);
+  const refDay = new Date(referenceDate);
+  refDay.setHours(0, 0, 0, 0);
+  const totalDays = Math.floor((refDay.getTime() - firstDay.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  if (totalDays <= 0) return { ratios: [], calibratingDays: 0 };
+
+  const dailyLoad: number[] = Array(totalDays).fill(0);
+  for (const s of sorted) {
+    const day = new Date(s.date);
+    day.setHours(0, 0, 0, 0);
+    const idx = Math.floor((day.getTime() - firstDay.getTime()) / (1000 * 60 * 60 * 24));
+    if (idx >= 0 && idx < totalDays) dailyLoad[idx] += s.load;
+  }
+
+  const ratios: number[] = [];
+  let acute = 0;
+  let chronic = 0;
+  for (const load of dailyLoad) {
+    acute = lambdaAcute * load + (1 - lambdaAcute) * acute;
+    chronic = lambdaChronic * load + (1 - lambdaChronic) * chronic;
+    ratios.push(chronic > 0 ? acute / chronic : 0);
+  }
+  return { ratios, calibratingDays: Math.min(14, totalDays) };
+}
+
 // §6.8 Deload Trigger
 export interface DeloadSignals {
   peakDetected: boolean;
@@ -406,21 +544,71 @@ export function personalizeRpeTable(
   return { table: updatedTable, isPersonalised: personalisedKeys.length >= 20 };
 }
 
-/** Check if a logged set is an RPE outlier (observed %1RM deviates >15% from expected).
- *  Returns true if the set should be flagged/rejected for RPE table updates. */
+/** Expected last-rep velocity (m/s) for a given prescribed RPE/reps combo, derived from
+ *  the lifter's load-velocity profile and personalised RPE table. The lvProfile is fitted
+ *  such that `%1RM = slope * velocity + intercept`, so inverting yields the velocity
+ *  expected at the table's load percentage for this RPE. Returns 0 if the profile is degenerate. */
+export function expectedLastRepVelocity(
+  reps: number,
+  rpe: number,
+  userTable: Record<string, number>,
+  lvProfile: LvProfile
+): number {
+  const key = `${reps}@${rpe}`;
+  const expectedPct = userTable[key] ?? DEFAULT_RPE_TABLE[key] ?? 0.80;
+  if (lvProfile.slope === 0) return 0;
+  const v = (expectedPct - lvProfile.intercept) / lvProfile.slope;
+  return v > 0 ? v : 0;
+}
+
+/** Outlier reason categorisation — useful for UI messaging and audit. */
+export type RpeOutlierReason = 'none' | 'load' | 'velocity' | 'both';
+
+/** Check if a logged set is an RPE outlier. Combines two independent signals:
+ *   1) Load deviation — observed %1RM deviates >15% from the expected %1RM for stated rpe/reps.
+ *   2) LRV deviation — when last-rep velocity and a calibrated lvProfile (n≥10) are available,
+ *      compare against the velocity expected for the stated RPE; >15% disagrees with reported effort.
+ *  Returns the failing category (or 'none'); call sites should treat any non-'none' as an outlier. */
+export function detectRpeOutlier(
+  load: number,
+  reps: number,
+  rpe: number,
+  e1rmSession: number,
+  userTable: Record<string, number>,
+  lastRepVelocity?: number,
+  lvProfile?: LvProfile
+): RpeOutlierReason {
+  if (e1rmSession <= 0 || load <= 0) return 'none';
+  const observedPct = load / e1rmSession;
+  const key = `${reps}@${rpe}`;
+  const expectedPct = userTable[key] ?? DEFAULT_RPE_TABLE[key] ?? 0.80;
+  const loadFail = Math.abs(observedPct - expectedPct) / expectedPct > 0.15;
+
+  let lrvFail = false;
+  if (lastRepVelocity !== undefined && lastRepVelocity > 0 && lvProfile && lvProfile.n >= 10) {
+    const expectedV = expectedLastRepVelocity(reps, rpe, userTable, lvProfile);
+    if (expectedV > 0) {
+      lrvFail = Math.abs(lastRepVelocity - expectedV) / expectedV > 0.15;
+    }
+  }
+
+  if (loadFail && lrvFail) return 'both';
+  if (loadFail) return 'load';
+  if (lrvFail) return 'velocity';
+  return 'none';
+}
+
+/** Legacy boolean wrapper kept for call sites that only need a pass/fail. */
 export function isRpeOutlier(
   load: number,
   reps: number,
   rpe: number,
   e1rmSession: number,
-  userTable: Record<string, number>
+  userTable: Record<string, number>,
+  lastRepVelocity?: number,
+  lvProfile?: LvProfile
 ): boolean {
-  if (e1rmSession <= 0 || load <= 0) return false;
-  const observedPct = load / e1rmSession;
-  const key = `${reps}@${rpe}`;
-  const expectedPct = userTable[key] ?? DEFAULT_RPE_TABLE[key] ?? 0.80;
-  const deviation = Math.abs(observedPct - expectedPct) / expectedPct;
-  return deviation > 0.15;
+  return detectRpeOutlier(load, reps, rpe, e1rmSession, userTable, lastRepVelocity, lvProfile) !== 'none';
 }
 
 /** Estimate session duration in minutes (PRD §7.2.3) */

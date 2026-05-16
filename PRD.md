@@ -280,6 +280,16 @@ Time-to-Peak is the number of weekly exposures to a specific Development Block t
 
 After the first two completed blocks, the system replaces the training-age-based estimate with the user's actual observed TTP history.
 
+**Confirmation gate on TTP updates.** A single observed peak that disagrees with the current estimate is not enough to shift TTP — it could be caused by acute illness, poor sleep, or a sandbagged session rather than a durable change in adaptation speed. To buffer against this noise, off-target peaks are first held as a **pending candidate**:
+
+1. The peak week is appended to `ttp_history` (so the chart shows the raw observation).
+2. If the candidate matches the current estimate (within ±0.5 wk), it is ignored — any existing pending candidate is discarded.
+3. If it is the first off-target peak, it is stored as `ttp_pending_peak` and the estimate is unchanged.
+4. If a second consecutive off-target peak arrives in the **same direction** (both earlier or both later than the estimate) and **within ±1 week** of the first candidate, the gate fires: the EWMA (α = 0.4) is applied to both observations in sequence and the estimate is updated. The candidate is then cleared.
+5. If the second observation contradicts the candidate (different direction or jumps >1 wk), both candidates are discarded — the estimate stays put and the new observation becomes the next pending candidate.
+
+Each transition is logged to the block's audit log (`TTP_CANDIDATE_RECORDED`, `TTP_ESTIMATE_UPDATED`, `TTP_CANDIDATE_CLEARED`, `TTP_CANDIDATE_REPLACED`) so the user can see why the estimate did or did not move.
+
 ### 4.5 Intra-Session Volume Autoregulation [VALIDATED by extension from VBT literature]
 
 The system regulates the volume of back-off work within a session using a performance-drop termination protocol. This is the application layer of the velocity-loss (VL) research tradition (Pareja-Blanco et al., 2017, 2020; Sánchez-Medina & González-Badillo, 2011) to an RPE-based, non-VBT context.
@@ -414,13 +424,18 @@ The EFC is a per-exercise systemic demand multiplier. No peer-reviewed validatio
 
 #### 4.7.4 Acute:Chronic Load Ratio (ACLR)
 
-The system will compute a weekly rolling ACLR for monitoring fatigue ramping, defined as:
+The system computes an EWMA-based ACLR (Williams et al. 2017) over daily session sRPE-load, falling back to SFI when sRPE was not logged:
 
 ```
-ACLR = sRPE_Load_this_week / Rolling_28_day_average_sRPE_Load
+λ_acute   = 2/(7+1)  = 0.25     (7-day half-life)
+λ_chronic = 2/(28+1) ≈ 0.069    (28-day half-life)
+ewma_t    = λ * load_t + (1 - λ) * ewma_{t-1}
+ACLR      = ewma_acute / ewma_chronic
 ```
 
-Based on Gabbett (2016) and subsequent modifications. **Important caveat:** The ACLR has been criticised for mathematical coupling issues (Impellizzeri et al., 2020; Lolli et al., 2019) and its injury-prediction validity in team sports is debated; it is untested in strength sports specifically [VALIDATED — contested]. The system uses the ACLR as a **qualitative warning indicator** only: an ACLR > 1.5 triggers a yellow flag encouraging the user to monitor recovery carefully. It does not automatically modify the programme. It is not presented to the user as a validated injury-risk score.
+Days without sessions contribute load = 0 (decay continues). For the first 14 days of training history the chronic baseline is insufficient and the ratio is shown as "calibrating" rather than as a value — this prevents spurious warnings during the first two weeks.
+
+Based on Gabbett (2016) and Williams et al. (2017) "Better way to determine the acute:chronic workload ratio?" The EWMA formulation explicitly addresses the mathematical coupling and phase-transition artifacts that affect simple week-over-week and rolling-window ratios (Impellizzeri et al., 2020; Lolli et al., 2019). **Important caveat:** ACLR's injury-prediction validity remains contested in team sports and is untested in strength sports specifically [VALIDATED — contested]. The system uses the ACLR as a **qualitative warning indicator** only: an ACLR > 1.5 triggers a yellow flag encouraging the user to monitor recovery carefully. It does not automatically modify the programme. It is not presented to the user as a validated injury-risk score.
 
 ### 4.8 Daily Readiness & Wellness Monitoring [VALIDATED]
 
@@ -741,10 +756,17 @@ sfi_session = Σ set_sfi for all sets in session
 sfi_week = Σ sfi_session for all sessions in week
 ```
 
-**Rolling ACLR (warning only):**
+**EWMA ACLR (warning only, Williams et al. 2017):**
 ```
-sfi_28day_avg = mean(sfi_week for last 4 complete weeks)
-aclr = sfi_week / sfi_28day_avg  // Computed weekly; flag if > 1.5
+// Per-day input: srpe_load if logged, else sfi_session (fallback). Missing days = 0.
+λ_acute   = 2 / (7  + 1)  = 0.25
+λ_chronic = 2 / (28 + 1) ≈ 0.069
+
+ewma_acute_t   = λ_acute   * load_t + (1 - λ_acute)   * ewma_acute_{t-1}
+ewma_chronic_t = λ_chronic * load_t + (1 - λ_chronic) * ewma_chronic_{t-1}
+
+aclr = ewma_acute / ewma_chronic   // flag if > 1.5
+calibrating = total_days_of_history < 14   // suppress ratio while chronic baseline immature
 ```
 
 ### 6.3 Readiness Composite Score (RCS) Algorithm
@@ -912,13 +934,37 @@ is_stalled = (
 )
 ```
 
-**TTP recording and updating:**
+**TTP recording and updating (with confirmation gate):**
 ```
 IF is_peak_confirmed:
-  current_block_ttp = block_week - 2  // Peak was 2 weeks ago (confirmed retrospectively)
-  user.ttp_history.append(current_block_ttp)
-  user.ttp_estimate = EWMA(user.ttp_history, α=0.4)
-  // Trigger deload evaluation (see §6.8)
+  observed_peak = block_week - 2  // Peak was 2 weeks ago (confirmed retrospectively)
+  user.ttp_history.append(observed_peak)
+
+  // Confirmation gate — see §4.4.3. A single off-target peak does not move ttp_estimate;
+  // it is held as a pending candidate. Two consecutive same-direction off-target peaks
+  // (within ±1 wk of each other) are required before the EWMA update fires.
+
+  on_target = |observed_peak - user.ttp_estimate| < 0.5
+
+  IF on_target:
+    user.ttp_pending_peak = NULL        // discard any candidate
+  ELIF user.ttp_pending_peak IS NULL:
+    user.ttp_pending_peak = observed_peak  // first off-target observation
+  ELSE:
+    prev = user.ttp_pending_peak
+    same_direction = (prev < user.ttp_estimate AND observed_peak < user.ttp_estimate)
+                  OR (prev > user.ttp_estimate AND observed_peak > user.ttp_estimate)
+    consistent = |prev - observed_peak| <= 1
+    IF same_direction AND consistent:
+      // Apply EWMA across both observations in chronological order
+      after_first = 0.4 * prev + 0.6 * user.ttp_estimate
+      user.ttp_estimate = 0.4 * observed_peak + 0.6 * after_first
+      user.ttp_pending_peak = NULL
+    ELSE:
+      // Inconsistent — discard old candidate, hold new one
+      user.ttp_pending_peak = observed_peak
+
+  // Trigger deload evaluation (see §6.8) regardless of whether the estimate moved
 ```
 
 **Three response pattern classification (Bondarchuk) [HEURISTIC]:**

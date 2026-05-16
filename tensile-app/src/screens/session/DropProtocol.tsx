@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
-import { getBackOffDrop, calculateSetSFI, ensembleE1RM } from '../../engine';
+import { getBackOffDrop, calculateSetSFI, ensembleE1RM, inferLiftKey, resolveLvProfile } from '../../engine';
 import { T, Phone, PrimaryBtn } from '../../shared';
 import type { SetLog } from '../../store';
 
@@ -30,6 +30,7 @@ export default function DropProtocol() {
   const logSet = useStore(s => s.logSet);
   const [rpe, setRpe] = useState(7);
   const [velocity, setVelocity] = useState<number | undefined>(undefined);
+  const [lastRepVelocity, setLastRepVelocity] = useState<number | undefined>(undefined);
   const [showVelocity, setShowVelocity] = useState(false);
 
   if (!currentSession || !block) {
@@ -92,15 +93,15 @@ export default function DropProtocol() {
       : topSet.exerciseId);
 
   const buildSetLog = (): SetLog => {
-    const liftKey = (topSet.exerciseId.includes('bench') || topSet.exerciseId.includes('press')) ? 'bench'
-      : topSet.exerciseId.includes('deadlift') ? 'deadlift'
-      : 'squat';
+    const liftKey = inferLiftKey(topSet.exerciseId) ?? 'squat';
+    const lvProfile = resolveLvProfile(profile, liftKey);
     const e1rmResult = ensembleE1RM(
-      { load: backOffLoad, reps: topSet.prescribedReps, rpe, velocity },
+      { load: backOffLoad, reps: topSet.prescribedReps, rpe, velocity, lastRepVelocity },
       profile.rpeTable,
       profile.rpeCalibration,
       profile.rollingE1rm[liftKey] || 200,
       0.3,
+      lvProfile,
     );
     return {
       id: `set-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -113,6 +114,7 @@ export default function DropProtocol() {
       prescribedRpeTarget: stopRpe,
       actualRpe: rpe,
       velocity,
+      lastRepVelocity,
       e1rm: e1rmResult.session,
       sfi: calculateSetSFI(rpe, topSet.prescribedReps, topSet.exerciseId, false),
     };
@@ -191,21 +193,38 @@ export default function DropProtocol() {
             </span>
           </div>
           {showVelocity && (
-            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <input
-                type="number"
-                step={0.01}
-                value={velocity ?? ''}
-                onChange={e => setVelocity(e.target.value ? Number(e.target.value) : undefined)}
-                placeholder="m/s"
-                style={{
-                  fontFamily: T.mono, fontSize: 14, fontWeight: 500,
-                  background: 'transparent', border: `1px solid ${T.line}`,
-                  color: T.text, padding: '8px 10px', outline: 'none', width: 100,
-                }}
-              />
-              <span style={{ fontSize: 11, color: T.textDim }}>Mean propulsive velocity (m/s)</span>
-            </div>
+            <>
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  type="number"
+                  step={0.01}
+                  value={velocity ?? ''}
+                  onChange={e => setVelocity(e.target.value ? Number(e.target.value) : undefined)}
+                  placeholder="m/s"
+                  style={{
+                    fontFamily: T.mono, fontSize: 14, fontWeight: 500,
+                    background: 'transparent', border: `1px solid ${T.line}`,
+                    color: T.text, padding: '8px 10px', outline: 'none', width: 100,
+                  }}
+                />
+                <span style={{ fontSize: 11, color: T.textDim }}>Mean propulsive velocity (m/s)</span>
+              </div>
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  type="number"
+                  step={0.01}
+                  value={lastRepVelocity ?? ''}
+                  onChange={e => setLastRepVelocity(e.target.value ? Number(e.target.value) : undefined)}
+                  placeholder="m/s"
+                  style={{
+                    fontFamily: T.mono, fontSize: 14, fontWeight: 500,
+                    background: 'transparent', border: `1px solid ${T.line}`,
+                    color: T.text, padding: '8px 10px', outline: 'none', width: 100,
+                  }}
+                />
+                <span style={{ fontSize: 11, color: T.textDim }}>Last-rep velocity (m/s) — optional</span>
+              </div>
+            </>
           )}
         </div>
 
