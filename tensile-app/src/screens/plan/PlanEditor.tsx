@@ -199,6 +199,7 @@ export default function PlanEditor() {
       sets: entry.defaultSets,
       reps: entry.defaultReps,
       rpeTarget: entry.defaultRpe,
+      primaryMuscles: entry.primaryMuscles,
     };
     setLocalExercises(prev => ({
       ...prev,

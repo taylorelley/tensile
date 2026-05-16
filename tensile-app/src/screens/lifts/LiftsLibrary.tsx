@@ -12,6 +12,12 @@ const TAG_COLOR: Record<SessionExercise['tag'], string> = {
   CORE:    T.good,
 };
 
+const MUSCLE_OPTIONS = [
+  'quads', 'hamstrings', 'glutes', 'spinal_erectors',
+  'pecs', 'anterior_deltoid', 'triceps', 'biceps',
+  'lats', 'rear_deltoid', 'core',
+];
+
 interface EditorState {
   mode: 'add' | 'edit';
   id?: string;
@@ -20,6 +26,7 @@ interface EditorState {
   defaultSets: number;
   defaultReps: number;
   defaultRpe: number;
+  primaryMuscles: string[];
 }
 
 const blankEditor: EditorState = {
@@ -29,6 +36,7 @@ const blankEditor: EditorState = {
   defaultSets: 3,
   defaultReps: 10,
   defaultRpe: 8,
+  primaryMuscles: [],
 };
 
 function slugify(name: string): string {
@@ -56,6 +64,7 @@ export default function LiftsLibrary() {
     defaultSets: e.defaultSets,
     defaultReps: e.defaultReps,
     defaultRpe: e.defaultRpe,
+    primaryMuscles: e.primaryMuscles,
   });
   const closeEditor = () => setEditor(null);
 
@@ -71,6 +80,7 @@ export default function LiftsLibrary() {
         defaultSets: Math.max(1, editor.defaultSets),
         defaultReps: Math.max(1, editor.defaultReps),
         defaultRpe: Math.max(5, Math.min(10, editor.defaultRpe)),
+        primaryMuscles: editor.primaryMuscles,
       });
     } else if (editor.id) {
       updateCustomExercise(editor.id, {
@@ -79,6 +89,7 @@ export default function LiftsLibrary() {
         defaultSets: Math.max(1, editor.defaultSets),
         defaultReps: Math.max(1, editor.defaultReps),
         defaultRpe: Math.max(5, Math.min(10, editor.defaultRpe)),
+        primaryMuscles: editor.primaryMuscles,
       });
     }
     closeEditor();
@@ -233,6 +244,31 @@ export default function LiftsLibrary() {
                   style={inputStyle}
                 />
               </div>
+            </div>
+
+            <div className="tns-eyebrow" style={{ marginBottom: 6 }}>Primary muscles</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 18 }}>
+              {MUSCLE_OPTIONS.map(mg => {
+                const selected = editor.primaryMuscles.includes(mg);
+                return (
+                  <div
+                    key={mg}
+                    onClick={() => setEditor({
+                      ...editor,
+                      primaryMuscles: selected
+                        ? editor.primaryMuscles.filter(m => m !== mg)
+                        : [...editor.primaryMuscles, mg],
+                    })}
+                    style={{
+                      border: `1px solid ${selected ? T.accent : T.line}`,
+                      background: selected ? 'rgba(255,110,58,0.08)' : 'transparent',
+                      padding: '6px 10px', cursor: 'pointer',
+                      fontFamily: T.mono, fontSize: 10, letterSpacing: '0.04em',
+                      color: selected ? T.accent : T.textDim, textTransform: 'uppercase',
+                    }}
+                  >{mg.replace(/_/g, ' ')}</div>
+                );
+              })}
             </div>
 
             <div style={{ display: 'flex', gap: 8 }}>

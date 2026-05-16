@@ -30,6 +30,19 @@ function weeklyAverage(
   });
 }
 
+/** Build per-muscle-group weekly set totals from block.weeklyMuscleVolume */
+function weeklyMuscleVolumeData(
+  weeklyMuscleVolume: Record<number, Record<string, number>>,
+  muscleGroup: string
+): number[] {
+  const weeks = Object.keys(weeklyMuscleVolume).map(Number).sort((a, b) => a - b);
+  if (weeks.length === 0) return [];
+  const maxWeek = Math.max(...weeks);
+  return Array.from({ length: maxWeek + 1 }, (_, i) => {
+    return weeklyMuscleVolume[i]?.[muscleGroup] || 0;
+  });
+}
+
 export default function Volume() {
   const navigate = useNavigate();
   const currentBlock = useStore((s) => s.currentBlock);
@@ -37,6 +50,7 @@ export default function Volume() {
 
   const sessions = currentBlock?.sessions ?? [];
   const startDate = currentBlock?.startDate ?? '';
+  const weeklyMuscleVolume = currentBlock?.weeklyMuscleVolume ?? {};
 
   // Weekly working-set count (TOP_SET + BACK_OFF) — same units as MEV/MRV landmarks
   const setCountData = startDate
@@ -53,13 +67,9 @@ export default function Volume() {
   const setCountHasData = setCountData.some((v) => v > 0);
   const sfiHasData = sfiData.some((v) => v > 0);
 
-  const mev = profile.mevEstimates.quads ?? 10;
-  const mrv = profile.mrvEstimates.quads ?? 22;
-  const mav = Math.round((mev + mrv) / 2);
   const blockWeek = currentBlock?.week ?? 1;
   const totalBlockWeeks = profile.ttpEstimate || 7;
   const recoverySignal = currentBlock?.sessions?.[currentBlock.sessions.length - 1]?.rcs ?? 70;
-  const weeklyBudget = volumeBudget(mev, mrv, blockWeek, totalBlockWeeks, recoverySignal);
 
   const totalVolume = sessions.length > 0
     ? (sessions.reduce((sum, s) => sum + s.volumeLoad, 0) / 1000).toFixed(1)
@@ -70,13 +80,13 @@ export default function Volume() {
   const sessionsLogged = sessions.filter((s) => s.status === 'COMPLETE').length;
   const totalSessions = sessions.length;
 
-  // Compute peak ACLR from actual session data
+  // Compute weekly ACLR (week-over-week SFI ratio) and peak
   const sortedCompleted = [...sessions]
     .filter((s) => s.status === 'COMPLETE')
     .sort((a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime());
-  let peakAclr = 0;
-  let peakAclrWeek = '—';
-  if (sortedCompleted.length >= 2) {
+
+  function computeWeeklyAclr(): { values: number[]; peak: number; peakWeek: string } {
+    if (sortedCompleted.length < 2) return { values: [], peak: 0, peakWeek: '—' };
     const start = new Date(currentBlock?.startDate ?? sortedCompleted[0].scheduledDate).getTime();
     const weekMap = new Map<number, number[]>();
     for (const s of sortedCompleted) {
@@ -87,24 +97,45 @@ export default function Volume() {
       if (!weekMap.has(week)) weekMap.set(week, []);
       weekMap.get(week)!.push(s.sfi);
     }
-    let prevAvg = 0;
-    for (let w = 0; w <= Math.max(...Array.from(weekMap.keys())); w++) {
+    const weeks = Array.from({ length: Math.max(...Array.from(weekMap.keys())) + 1 }, (_, i) => i);
+    const avgs = weeks.map(w => {
       const vals = weekMap.get(w);
-      const avg = vals && vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-      if (prevAvg > 0 && avg > 0) {
-        const aclr = avg / prevAvg;
-        if (aclr > peakAclr) {
-          peakAclr = aclr;
-          peakAclrWeek = `wk ${w + 1}`;
-        }
+      return vals && vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    });
+    const aclrs: number[] = [];
+    let peak = 0;
+    let peakWeek = '—';
+    for (let i = 1; i < avgs.length; i++) {
+      const prev = avgs[i - 1];
+      const curr = avgs[i];
+      const aclr = prev > 0 && curr > 0 ? curr / prev : 0;
+      aclrs.push(aclr);
+      if (aclr > peak) {
+        peak = aclr;
+        peakWeek = `wk ${i + 1}`;
       }
-      prevAvg = avg;
     }
+    return { values: aclrs, peak, peakWeek };
   }
+
+  const { values: aclrTrend, peak: peakAclr, peakWeek: peakAclrWeek } = computeWeeklyAclr();
+  const aclrHasData = aclrTrend.length > 0;
 
   const blockLabel = currentBlock
     ? `Block ${currentBlock.id.slice(-2)} · ${currentBlock.phase}`
     : 'No active block';
+
+  // Muscle groups to display (from profile MEV/MRV estimates)
+  const muscleGroups = [
+    { key: 'quads', label: 'Quads' },
+    { key: 'hamstrings', label: 'Hamstrings' },
+    { key: 'pecs', label: 'Pecs' },
+    { key: 'lats', label: 'Lats' },
+    { key: 'anterior_deltoid', label: 'Delts' },
+    { key: 'triceps', label: 'Triceps' },
+    { key: 'biceps', label: 'Biceps' },
+    { key: 'core', label: 'Core' },
+  ].filter(mg => profile.mevEstimates[mg.key] !== undefined || profile.mrvEstimates[mg.key] !== undefined);
 
   return (
     <Phone>
@@ -148,10 +179,63 @@ export default function Volume() {
           Working sets · weekly total
         </div>
 
+        {/* Muscle-group volume charts */}
+        <div className="tns-eyebrow" style={{ marginBottom: 10 }}>
+          Weekly sets per muscle group
+        </div>
+        {muscleGroups.length === 0 ? (
+          <ChartEmpty message="NO MUSCLE GROUP DATA" h={80} />
+        ) : (
+          muscleGroups.map((mg) => {
+            const data = weeklyMuscleVolumeData(weeklyMuscleVolume, mg.key);
+            const hasData = data.some((v) => v > 0);
+            const mev = profile.mevEstimates[mg.key] ?? 8;
+            const mrv = profile.mrvEstimates[mg.key] ?? 20;
+            const mav = Math.round((mev + mrv) / 2);
+            const budget = volumeBudget(mev, mrv, blockWeek, totalBlockWeeks, recoverySignal);
+            return (
+              <div key={mg.key} style={{ marginBottom: 18 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 500 }}>{mg.label}</span>
+                  <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, letterSpacing: '0.06em' }}>
+                    BUDGET {budget} · MEV {mev} · MRV {mrv}
+                  </span>
+                </div>
+                {hasData ? (
+                  <>
+                    <ChartBars data={data} w={300} h={70} mev={mev} mav={mav} mrv={mrv} />
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        marginTop: 4,
+                        fontFamily: T.mono,
+                        fontSize: 9,
+                        color: T.textMute,
+                        letterSpacing: '0.06em',
+                      }}
+                    >
+                      {data.map((_, i) => (
+                        <span key={i}>W{i + 1}</span>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <ChartEmpty message={`NO ${mg.label.toUpperCase()} DATA YET`} h={70} />
+                )}
+              </div>
+            );
+          })
+        )}
+
+        {/* Overall working-set count */}
+        <div className="tns-eyebrow" style={{ marginTop: 10, marginBottom: 10 }}>
+          Overall working sets
+        </div>
         <div style={{ marginBottom: 28 }}>
           {setCountHasData ? (
             <>
-              <ChartBars data={setCountData} w={300} h={100} mev={mev} mav={mav} mrv={mrv} />
+              <ChartBars data={setCountData} w={300} h={80} />
               <div
                 style={{
                   display: 'flex',
@@ -169,7 +253,7 @@ export default function Volume() {
               </div>
             </>
           ) : (
-            <ChartEmpty message="NO WORKING SETS LOGGED YET" h={100} />
+            <ChartEmpty message="NO WORKING SETS LOGGED YET" h={80} />
           )}
         </div>
 
@@ -186,6 +270,42 @@ export default function Volume() {
           )}
         </div>
 
+        {/* ACLR trend */}
+        <div className="tns-eyebrow" style={{ marginBottom: 8 }}>
+          ACLR trend ·{' '}
+          <span style={{ color: T.caution }}>WEEK-OVER-WEEK</span>
+        </div>
+        <div style={{ marginBottom: 22 }}>
+          {aclrHasData ? (
+            <>
+              <Chart data={aclrTrend} color={T.caution} w={320} h={80} ticks={3} />
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginTop: 4,
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  color: T.textMute,
+                  letterSpacing: '0.06em',
+                }}
+              >
+                {aclrTrend.map((_, i) => (
+                  <span key={i}>W{i + 2}</span>
+                ))}
+              </div>
+              {aclrTrend.some(v => v > 1.5) && (
+                <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(232,193,78,0.08)', borderLeft: `2px solid ${T.caution}`, fontSize: 11, color: T.textDim }}>
+                  <span className="tns-mono" style={{ color: T.caution }}>WARNING</span>{' '}
+                  ACLR exceeded 1.5 in {aclrTrend.filter(v => v > 1.5).length} week(s) — consider reducing volume spike.
+                </div>
+              )}
+            </>
+          ) : (
+            <ChartEmpty message="NO ACLR DATA YET" h={80} />
+          )}
+        </div>
+
         {/* Summary grid */}
         <div
           style={{
@@ -198,7 +318,6 @@ export default function Volume() {
           }}
         >
           {[
-            ['Volume budget', String(weeklyBudget), 'SETS'],
             ['Total volume', totalVolume, 'K KG'],
             ['Total sRPE load', totalSrpeLoad, 'AU'],
             ['Peak ACLR' + (peakAclrWeek !== '—' ? ' · ' + peakAclrWeek : ''), peakAclr > 0 ? peakAclr.toFixed(2) : '—', '×'],

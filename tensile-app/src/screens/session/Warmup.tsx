@@ -46,12 +46,15 @@ export default function Warmup() {
   }
 
   // Build warmup steps from the prescribed top-set load.
-  // Use the session's primary exercise (exercises[0]) as the e1RM base for all exercises.
-  const primaryEx = currentSession.exercises[0];
-  const liftKey = primaryEx?.id === 'barbell_back_squat' ? 'squat' : primaryEx?.id === 'bench_press' ? 'bench' : primaryEx?.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
+  // Use exercise-specific e1RM mapping (same logic as TopSet)
+  const liftKey = (ex.id.includes('bench') || ex.id.includes('press')) ? 'bench'
+    : ex.id.includes('deadlift') || ex.id === 'romanian_deadlift' ? 'deadlift'
+    : ex.id.includes('squat') || ex.id === 'front_squat' || ex.id === 'paused_squat' ? 'squat'
+    : 'squat';
   const pct = getRpePct(ex.reps, ex.rpeTarget);
   const e1rm = profile.e1rm[liftKey] || 200;
-  const prescribedLoad = ex.prescribedLoad ?? Math.round(e1rm * pct / 2.5) * 2.5;
+  const assistanceMultiplier = ex.tag === 'PRIMARY' ? 1.0 : ex.tag === 'ASSIST' ? 0.75 : 0.60;
+  const prescribedLoad = ex.prescribedLoad ?? Math.round(e1rm * pct * assistanceMultiplier / 2.5) * 2.5;
 
   const warmupSets: { l: string; r: number; rpe?: string }[] = [
     { l: 'Bar', r: 10 },

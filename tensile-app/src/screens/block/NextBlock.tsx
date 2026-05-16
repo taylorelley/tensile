@@ -148,9 +148,9 @@ export default function NextBlock() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {[
-            { l: 'Squat', from: Math.round(profile.e1rm.squat || 0), to: Math.round(((profile.e1rm.squat || 0) * 1.025) / 2.5) * 2.5 },
-            { l: 'Bench', from: Math.round(profile.e1rm.bench || 0), to: Math.round(((profile.e1rm.bench || 0) * 1.025) / 2.5) * 2.5 },
-            { l: 'DL', from: Math.round(profile.e1rm.deadlift || 0), to: Math.round(((profile.e1rm.deadlift || 0) * 1.025) / 2.5) * 2.5 },
+            { l: 'Squat', from: Math.round(profile.e1rm.squat || 0), to: Math.round(((profile.e1rm.squat || 0) * 1.03) / 2.5) * 2.5 },
+            { l: 'Bench', from: Math.round(profile.e1rm.bench || 0), to: Math.round(((profile.e1rm.bench || 0) * 1.03) / 2.5) * 2.5 },
+            { l: 'DL', from: Math.round(profile.e1rm.deadlift || 0), to: Math.round(((profile.e1rm.deadlift || 0) * 1.03) / 2.5) * 2.5 },
           ].map((t, i) => (
             <div
               key={i}

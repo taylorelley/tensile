@@ -96,23 +96,42 @@ export default function Biometrics() {
   const [belt, setBelt] = useState(profile.belt);
   const [kneeSleeves, setKneeSleeves] = useState(profile.kneeSleeves);
 
+  const [showNoviceGate, setShowNoviceGate] = useState(false);
+
   const handleContinue = () => {
+    // Training age gate: < 6 months is out of scope for v1.0
+    if (trainingAge === '< 6 months') {
+      setShowNoviceGate(true);
+      return;
+    }
+    // Map training age string to numeric years for TTP initialisation
+    const ageMap: Record<string, number> = {
+      '6–12 months': 0.75,
+      '1–2 years': 1.5,
+      '2–5 years': 3,
+      '5+ years': 7,
+    };
+    const trainingAgeYears = ageMap[trainingAge] ?? 3;
+    // Flag RPE calibration required for 6–12 months users
+    const needsCalibration = trainingAge === '6–12 months';
     setProfile({
       bodyWeight,
       dob,
       sex,
       height,
       trainingAge,
+      trainingAgeYears,
       primaryGoal,
       squatStance,
       deadliftStance,
       belt,
       kneeSleeves,
+      rpeCalibration: needsCalibration ? { sessions: 0, mae: 1.0 } : profile.rpeCalibration,
     });
     navigate('/onboarding/baselines');
   };
 
-  const trainingAges = ['6–12 months', '1–2 years', '2–5 years', '5+ years'];
+  const trainingAges = ['< 6 months', '6–12 months', '1–2 years', '2–5 years', '5+ years'];
   const primaryGoals = ['Powerlifting', 'Strength', 'Hypertrophy', 'General'];
 
   return (
@@ -180,6 +199,23 @@ export default function Biometrics() {
       {['Raw', 'Sleeves', 'Wraps'].map(s => (
         <Choice key={s} label={s} selected={kneeSleeves === s.toLowerCase()} onClick={() => setKneeSleeves(s.toLowerCase())} />
       ))}
+
+      {/* Novice gate modal */}
+      {showNoviceGate && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(13,12,10,0.85)', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 22px' }}>
+          <div style={{ border: `1px solid ${T.line}`, background: T.bg, padding: '22px 24px', maxWidth: 320 }}>
+            <div className="tns-eyebrow" style={{ marginBottom: 8, color: T.caution }}>ELIGIBILITY</div>
+            <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 24, lineHeight: 1.1, marginBottom: 12 }}>Tensile is built for experienced lifters.</div>
+            <div style={{ fontSize: 12.5, color: T.textDim, lineHeight: 1.55, marginBottom: 18 }}>
+              RPE accuracy — the foundation of autoregulation — is unreliable in true novices. We recommend a simple linear progression programme for your first 6 months.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <PrimaryBtn dim full={false} onClick={() => setShowNoviceGate(false)}>Back</PrimaryBtn>
+              <PrimaryBtn onClick={() => { setTrainingAge('6–12 months'); setShowNoviceGate(false); }}>I'm at 6 months →</PrimaryBtn>
+            </div>
+          </div>
+        </div>
+      )}
     </OBShell>
   );
 }

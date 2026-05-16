@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Phone, AppHeader, TabBar, T } from '../../shared';
+import { Phone, AppHeader, TabBar, T, PrimaryBtn } from '../../shared';
 import { generatePeakingPlan } from '../../engine';
 import { useStore } from '../../store';
 
@@ -10,6 +10,7 @@ const phaseLabels = ['DEV', 'PIV', 'REAL', 'TPR', '★'];
 export default function Peaking() {
   const navigate = useNavigate();
   const profile = useStore((s) => s.profile);
+  const setProfile = useStore((s) => s.setProfile);
 
   const meetDate = new Date(profile.meetDate || '2026-09-14');
   const plan = generatePeakingPlan(meetDate, profile.ttpEstimate);
@@ -27,6 +28,8 @@ export default function Peaking() {
     { l: 'Taper', wk: `${taperDays} d`, col: T.textDim, w: Math.max(1, Math.round(taperDays / 7)) },
     { l: 'MEET', wk: `${plan.meetDate.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })}`, col: T.accent, w: 2, terminal: true },
   ];
+
+  const feasible = plan.feasible;
 
   return (
     <Phone>
@@ -63,6 +66,40 @@ export default function Peaking() {
             </span>
           </div>
         </div>
+
+        {/* Feasibility warning */}
+        {!feasible && (
+          <div style={{ padding: '12px 14px', background: T.surface, borderLeft: `2px solid ${T.bad}`, marginBottom: 18, fontSize: 12, color: T.textDim, lineHeight: 1.55 }}>
+            <span className="tns-mono" style={{ fontSize: 9, color: T.bad, letterSpacing: '0.08em' }}>WARNING</span>
+            <div style={{ marginTop: 4 }}>
+              Insufficient time for a full TTP cycle before the meet. Options:
+              <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span>1. Begin development block immediately (partial cycle)</span>
+                <span>2. Postpone competition date</span>
+                <span>3. Skip pivot block and run development → taper directly</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Peaking activation */}
+        {profile.peakingActive ? (
+          <div style={{ padding: '12px 14px', background: 'rgba(127,179,122,0.08)', borderLeft: `2px solid ${T.good}`, marginBottom: 18 }}>
+            <span className="tns-mono" style={{ fontSize: 9, color: T.good, letterSpacing: '0.08em' }}>PEAKING ACTIVE</span>
+            <div style={{ marginTop: 4, fontSize: 12, color: T.textDim, lineHeight: 1.55 }}>
+              Development blocks are locked. Complete the current block, then run pivot → realisation → taper.
+            </div>
+          </div>
+        ) : (
+          <div style={{ marginBottom: 18 }}>
+            <PrimaryBtn onClick={() => setProfile({ peakingActive: true })}>
+              Activate peaking plan →
+            </PrimaryBtn>
+            <div style={{ marginTop: 8, fontSize: 11, color: T.textDim, lineHeight: 1.5 }}>
+              Once activated, new development blocks cannot be generated until the meet is complete.
+            </div>
+          </div>
+        )}
 
         {/* Timeline */}
         <div className="tns-eyebrow" style={{ marginBottom: 10 }}>

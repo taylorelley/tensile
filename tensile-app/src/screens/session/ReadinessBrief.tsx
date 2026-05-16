@@ -30,7 +30,7 @@ export default function ReadinessBrief() {
     const pct = getRpePct(ex.reps, ex.rpeTarget);
     const e1rm = profile.e1rm[liftKey] || 200;
     topLoad = Math.round(e1rm * pct / 2.5) * 2.5;
-    backOffLoad = Math.round(topLoad * (1 - getBackOffDrop(block.phase)) / 2.5) * 2.5;
+    backOffLoad = Math.round(topLoad * (1 - getBackOffDrop(block.phase, block.week, profile.ttpEstimate || 6)) / 2.5) * 2.5;
 
     if (rcs >= 85) {
       topLoad = Math.round(topLoad * 1.03 / 2.5) * 2.5;

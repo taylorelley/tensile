@@ -17,9 +17,9 @@ export default function Attempts() {
   const formattedDate = meetDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   const lifts = [
-    { l: 'Squat', key: 'squat' as const, e1: profile.e1rm.squat || 200 },
-    { l: 'Bench', key: 'bench' as const, e1: profile.e1rm.bench || 140 },
-    { l: 'Deadlift', key: 'deadlift' as const, e1: profile.e1rm.deadlift || 230 },
+    { l: 'Squat', key: 'squat' as const, e1: profile.rollingE1rm.squat || profile.e1rm.squat || 200 },
+    { l: 'Bench', key: 'bench' as const, e1: profile.rollingE1rm.bench || profile.e1rm.bench || 140 },
+    { l: 'Deadlift', key: 'deadlift' as const, e1: profile.rollingE1rm.deadlift || profile.e1rm.deadlift || 230 },
   ].map((l) => ({
     ...l,
     opener: roundTo25(l.e1 * 0.93),

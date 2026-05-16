@@ -34,15 +34,21 @@ export default function TopSet() {
   const [load, setLoad] = useState(() => {
     if (!ex) return 0;
     if (ex.prescribedLoad != null) return ex.prescribedLoad;
-    // Use primary exercise (exercises[0]) as the e1RM base for all exercises in this session
-    const primaryEx = currentSession?.exercises[0];
-    const liftKey = primaryEx?.id === 'barbell_back_squat' ? 'squat' : primaryEx?.id === 'bench_press' ? 'bench' : primaryEx?.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
+    // Map each exercise to its appropriate e1RM base
+    const liftKey = (ex.id.includes('bench') || ex.id.includes('press')) ? 'bench'
+      : ex.id.includes('deadlift') || ex.id === 'romanian_deadlift' ? 'deadlift'
+      : ex.id.includes('squat') || ex.id === 'front_squat' || ex.id === 'paused_squat' ? 'squat'
+      : 'squat';
     const pct = getRpePct(ex.reps, ex.rpeTarget);
     const e1rmVal = profile.e1rm[liftKey] || 200;
-    return Math.round(e1rmVal * pct / 2.5) * 2.5;
+    // Assistance/supplemental exercises use a percentage of the primary lift e1RM
+    const assistanceMultiplier = ex.tag === 'PRIMARY' ? 1.0 : ex.tag === 'ASSIST' ? 0.75 : 0.60;
+    return Math.round(e1rmVal * pct * assistanceMultiplier / 2.5) * 2.5;
   });
   const [reps, setReps] = useState(() => ex?.reps ?? 3);
   const [rpe, setRpe] = useState(() => ex?.rpeTarget ?? 8.5);
+  const [velocity, setVelocity] = useState<number | undefined>(undefined);
+  const [showVelocity, setShowVelocity] = useState(false);
   if (!currentSession || !block) {
     return (
       <Phone>
@@ -77,18 +83,34 @@ export default function TopSet() {
     );
   }
 
-  const primaryEx = currentSession.exercises[0];
-  const liftKey = primaryEx?.id === 'barbell_back_squat' ? 'squat' : primaryEx?.id === 'bench_press' ? 'bench' : primaryEx?.id === 'conventional_deadlift' ? 'deadlift' : 'squat';
+  const liftKey = (ex.id.includes('bench') || ex.id.includes('press')) ? 'bench'
+    : ex.id.includes('deadlift') || ex.id === 'romanian_deadlift' ? 'deadlift'
+    : ex.id.includes('squat') || ex.id === 'front_squat' || ex.id === 'paused_squat' ? 'squat'
+    : 'squat';
   const pct = getRpePct(ex.reps, ex.rpeTarget);
   const e1rmVal = profile.e1rm[liftKey] || 200;
-  const prescribedLoad = ex.prescribedLoad ?? Math.round(e1rmVal * pct / 2.5) * 2.5;
+  const assistanceMultiplier = ex.tag === 'PRIMARY' ? 1.0 : ex.tag === 'ASSIST' ? 0.75 : 0.60;
+  const prescribedLoad = ex.prescribedLoad ?? Math.round(e1rmVal * pct * assistanceMultiplier / 2.5) * 2.5;
 
   const rolling = profile.rollingE1rm[liftKey] || 200;
-  const e1rmResult = ensembleE1RM({ load, reps, rpe }, profile.rpeTable, profile.rpeCalibration, rolling, 0.3);
+  const e1rmResult = ensembleE1RM({ load, reps, rpe, velocity }, profile.rpeTable, profile.rpeCalibration, rolling, 0.3);
   const e1rmDiff = ((e1rmResult.session - rolling) / rolling * 100).toFixed(1);
 
   // Individual method breakdown for transparency
-  const methodBreakdown = calculateE1RM({ load, reps, rpe }, profile.rpeTable, profile.rpeCalibration);
+  const methodBreakdown = calculateE1RM({ load, reps, rpe, velocity }, profile.rpeTable, profile.rpeCalibration, profile.lvProfile);
+
+  // VBT-RPE divergence flag
+  const vbtRpeDivergence = (() => {
+    if (!profile.lvProfile || velocity === undefined || methodBreakdown.vbtE1RM === undefined) return null;
+    const rpeBasedE1rm = methodBreakdown.rpeE1RM;
+    const vbtBasedE1rm = methodBreakdown.vbtE1RM;
+    const divergence = Math.abs(vbtBasedE1rm - rpeBasedE1rm) / rpeBasedE1rm;
+    if (divergence > 0.10) {
+      const impliedRpe = vbtBasedE1rm > rpeBasedE1rm ? Math.max(5, rpe - 0.5) : Math.min(10, rpe + 0.5);
+      return `Velocity suggests RPE ~${impliedRpe.toFixed(1)}, not ${rpe}`;
+    }
+    return null;
+  })();
 
   const currentExId = ex.id;
   const topSetsDone = currentSession.sets.filter(s => s.setType === 'TOP_SET' && s.exerciseId === currentExId).length;
@@ -105,6 +127,7 @@ export default function TopSet() {
       actualReps: reps,
       prescribedRpeTarget: ex.rpeTarget,
       actualRpe: rpe,
+      velocity,
       e1rm: e1rmResult.session,
       sfi: calculateSetSFI(rpe, reps, ex.id, true),
     };
@@ -163,6 +186,49 @@ export default function TopSet() {
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontFamily: T.mono, fontSize: 9.5, color: T.textMute, letterSpacing: '0.06em' }}>
           <span>RIR 4+</span><span>RIR 1–2</span><span>RIR 0 · MAX</span>
         </div>
+        <div style={{ marginTop: 8, fontFamily: T.mono, fontSize: 9, color: profile.rpeTablePersonalised ? T.good : T.textMute, letterSpacing: '0.06em' }}>
+          {profile.rpeTablePersonalised ? 'TABLE · PERSONALISED' : 'TABLE · POPULATION AVERAGE'}
+        </div>
+
+        {/* Optional velocity input */}
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="tns-eyebrow">Velocity (optional)</span>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => navigate('/session/vbt-calibration')}>
+                CALIBRATE →
+              </span>
+              <span className="tns-mono" style={{ fontSize: 9, color: T.accent, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => setShowVelocity(!showVelocity)}>
+                {showVelocity ? 'HIDE' : 'ADD VBT →'}
+              </span>
+            </div>
+          </div>
+          {showVelocity && (
+            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input
+                type="number"
+                step={0.01}
+                value={velocity ?? ''}
+                onChange={e => setVelocity(e.target.value ? Number(e.target.value) : undefined)}
+                placeholder="m/s"
+                style={{
+                  fontFamily: T.mono, fontSize: 14, fontWeight: 500,
+                  background: 'transparent', border: `1px solid ${T.line}`,
+                  color: T.text, padding: '8px 10px', outline: 'none', width: 100,
+                }}
+              />
+              <span style={{ fontSize: 11, color: T.textDim }}>Mean propulsive velocity (m/s)</span>
+            </div>
+          )}
+        </div>
+
+        {/* VBT-RPE divergence warning */}
+        {vbtRpeDivergence && (
+          <div style={{ marginTop: 14, padding: '10px 12px', background: 'rgba(232,193,78,0.08)', borderLeft: `2px solid ${T.caution}` }}>
+            <span className="tns-mono" style={{ fontSize: 9, color: T.caution, letterSpacing: '0.08em' }}>VBT-RPE DIVERGENCE</span>
+            <div style={{ marginTop: 4, fontSize: 12, color: T.textDim }}>{vbtRpeDivergence}</div>
+          </div>
+        )}
 
         {/* Inline calc preview */}
         <div style={{ marginTop: 18, border: `1px solid ${T.line}`, padding: '12px 14px' }}>

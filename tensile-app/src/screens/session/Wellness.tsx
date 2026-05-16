@@ -111,6 +111,8 @@ export default function Wellness() {
   const block = useStore(s => s.currentBlock);
   const currentSession = useStore(s => s.currentSession);
   const updateSession = useStore(s => s.updateSession);
+  const profile = useStore(s => s.profile);
+  const setProfile = useStore(s => s.setProfile);
 
   const defaults = currentSession?.wellness ?? { sleepQuality: 7, overallFatigue: 6, muscleSoreness: 5, motivation: 8, stress: 6 };
 
@@ -119,6 +121,8 @@ export default function Wellness() {
   const [muscleSoreness, setMuscleSoreness] = useState(defaults.muscleSoreness);
   const [motivation, setMotivation] = useState(defaults.motivation);
   const [stress, setStress] = useState(defaults.stress);
+  const [showHrvInput, setShowHrvInput] = useState(false);
+  const [hrvInput, setHrvInput] = useState<number | undefined>(undefined);
 
   if (!currentSession || !block) {
     return (
@@ -138,7 +142,7 @@ export default function Wellness() {
   }
 
   const handleCompute = () => {
-    const wellness = { sleepQuality, overallFatigue, muscleSoreness, motivation, stress };
+    const wellness = { sleepQuality, overallFatigue, muscleSoreness, motivation, stress, hrvRmssd: hrvInput };
     const completed = block.sessions
       .filter(s => s.status === 'COMPLETE')
       .sort((a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime());
@@ -153,8 +157,19 @@ export default function Wellness() {
     const wellnessComposite = (sleepQuality + overallFatigue + muscleSoreness + motivation + stress) / 5;
     const baseHrv = 62;
     const estimatedHrv7day = baseHrv + Math.round((wellnessComposite - 6.5) * 1.5);
-    const rcs = calculateRCS(wellness, estimatedHrv7day, baseHrv, rpeDrift);
-    updateSession(block.id, currentSession.id, { wellness, rcs });
+
+    // Store real HRV in profile history and recompute 28-day baseline
+    let hrv28DayBaseline = profile.hrv28DayBaseline;
+    if (hrvInput !== undefined) {
+      const newHistory = [...(profile.hrvHistory || []), hrvInput].slice(-28);
+      hrv28DayBaseline = newHistory.length > 0
+        ? Math.round(newHistory.reduce((a, b) => a + b, 0) / newHistory.length * 10) / 10
+        : undefined;
+      setProfile({ hrvHistory: newHistory, hrv28DayBaseline });
+    }
+
+    const rcs = calculateRCS(wellness, estimatedHrv7day, hrv28DayBaseline ?? baseHrv, rpeDrift);
+    updateSession(block.id, currentSession.id, { wellness, rcs, wellnessCompleted: true });
     navigate('/session/readiness');
   };
 
@@ -170,6 +185,32 @@ export default function Wellness() {
         <WellnessSlider label="Muscle soreness" value={muscleSoreness} low="SEVERE" high="NONE" onChange={setMuscleSoreness} />
         <WellnessSlider label="Motivation" value={motivation} low="POOR" high="HIGH" onChange={setMotivation} />
         <WellnessSlider label="Non-training stress" value={stress} low="EXTREME" high="NONE" onChange={setStress} />
+
+        {/* Manual HRV entry */}
+        <div style={{ marginTop: 14, marginBottom: 4 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="tns-eyebrow">HRV (optional)</span>
+            <span className="tns-mono" style={{ fontSize: 9, color: T.accent, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => setShowHrvInput(!showHrvInput)}>
+              {showHrvInput ? 'HIDE' : 'ADD HRV →'}
+            </span>
+          </div>
+          {showHrvInput && (
+            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input
+                type="number"
+                value={hrvInput ?? ''}
+                onChange={e => setHrvInput(e.target.value ? Number(e.target.value) : undefined)}
+                placeholder="rMSSD ms"
+                style={{
+                  fontFamily: T.mono, fontSize: 14, fontWeight: 500,
+                  background: 'transparent', border: `1px solid ${T.line}`,
+                  color: T.text, padding: '8px 10px', outline: 'none', width: 120,
+                }}
+              />
+              <span style={{ fontSize: 11, color: T.textDim }}>Morning rMSSD (ms)</span>
+            </div>
+          )}
+        </div>
 
         {/* HRV estimate derived from wellness composite */}
         {(() => {

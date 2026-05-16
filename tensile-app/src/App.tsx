@@ -21,6 +21,7 @@ import TopSet from './screens/session/TopSet';
 import DropProtocol from './screens/session/DropProtocol';
 import Summary from './screens/session/Summary';
 import Override from './screens/session/Override';
+import VbtCalibration from './screens/session/VbtCalibration';
 
 // Block Review
 import Performance from './screens/block/Performance';
@@ -84,6 +85,7 @@ function App() {
           <Route path="/session/drop" element={<DropProtocol />} />
           <Route path="/session/summary" element={<Summary />} />
           <Route path="/session/override" element={<Override />} />
+          <Route path="/session/vbt-calibration" element={<VbtCalibration />} />
           <Route path="/lifts" element={<LiftsLibrary />} />
           <Route path="/block/performance" element={<Performance />} />
           <Route path="/block/volume" element={<Volume />} />
