@@ -1,6 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { StateStorage } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import {
   ensembleE1RM,
   DEFAULT_RPE_TABLE,
@@ -1257,7 +1256,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'tensile-storage',
-      storage: idbStorage as StateStorage,
+      storage: createJSONStorage(() => idbStorage),
       version: 2,
       // P0.3.2: project any persisted RPE table that predates the monotonicity
       // refactor back onto the monotone cone, and seed defaults for new fields.
