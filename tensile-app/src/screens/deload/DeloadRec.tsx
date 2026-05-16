@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import type { Block, UserProfile } from '../../store';
 import { Phone, AppHeader, PrimaryBtn, T } from '../../shared';
-import { calculateDeloadScore, deloadRecommendation, detectPeak, detectStall, type DeloadSignals } from '../../engine';
+import { calculateDeloadScore, deloadRecommendation, detectPeak, detectStall, computeEwmaAclr, type DeloadSignals } from '../../engine';
 
 function computeDeloadSignals(currentBlock: Block | null, profile: UserProfile): DeloadSignals {
   const sessions = currentBlock?.sessions ?? [];
@@ -64,17 +64,15 @@ function computeDeloadSignals(currentBlock: Block | null, profile: UserProfile):
     recentSessions.length >= 3 &&
     recentSessions.slice(-3).every((s) => s.wellness.overallFatigue <= 4);
 
-  // aclrFlag: simplistic proxy from SFI spike
-  const recentSfi = recentSessions.map((s) => s.sfi).filter((v) => v > 0);
-  const avgSfi =
-    recentSfi.length > 0 ? recentSfi.reduce((a, b) => a + b, 0) / recentSfi.length : 0;
-  const earlierSfi = sorted
-    .slice(0, Math.max(0, sorted.length - recentSfi.length))
-    .map((s) => s.sfi)
-    .filter((v) => v > 0);
-  const avgEarlierSfi =
-    earlierSfi.length > 0 ? earlierSfi.reduce((a, b) => a + b, 0) / earlierSfi.length : 0;
-  const aclrFlag = avgEarlierSfi > 0 && avgSfi / avgEarlierSfi > 1.5;
+  // aclrFlag: EWMA acute:chronic ratio over per-day sRPE-load (Williams et al. 2017).
+  // Suppressed while the chronic baseline (<14 days of data) is still calibrating.
+  const aclrInput = sorted.map((s) => ({
+    date: s.scheduledDate,
+    load: s.srpeLoad ?? s.sfi ?? 0,
+  }));
+  const aclrLastDate = sorted.length > 0 ? new Date(sorted[sorted.length - 1].scheduledDate) : new Date();
+  const aclr = computeEwmaAclr(aclrInput, aclrLastDate);
+  const aclrFlag = !aclr.calibrating && aclr.ratio > 1.5;
 
   // jointPainFlag: proxy from sustained low muscle soreness (inverted scale)
   const jointPainFlag =

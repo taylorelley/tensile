@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
-import { ensembleE1RM, calculateE1RM, getRpePct, calculateSetSFI } from '../../engine';
+import { ensembleE1RM, calculateE1RM, getRpePct, calculateSetSFI, expectedLastRepVelocity, inferLiftKey, resolveLvProfile } from '../../engine';
 import { T, Phone, PrimaryBtn } from '../../shared';
 import type { SetLog } from '../../store';
 
@@ -48,6 +48,7 @@ export default function TopSet() {
   const [reps, setReps] = useState(() => ex?.reps ?? 3);
   const [rpe, setRpe] = useState(() => ex?.rpeTarget ?? 8.5);
   const [velocity, setVelocity] = useState<number | undefined>(undefined);
+  const [lastRepVelocity, setLastRepVelocity] = useState<number | undefined>(undefined);
   const [showVelocity, setShowVelocity] = useState(false);
   if (!currentSession || !block) {
     return (
@@ -83,25 +84,36 @@ export default function TopSet() {
     );
   }
 
-  const liftKey = (ex.id.includes('bench') || ex.id.includes('press')) ? 'bench'
-    : ex.id.includes('deadlift') || ex.id === 'romanian_deadlift' ? 'deadlift'
-    : ex.id.includes('squat') || ex.id === 'front_squat' || ex.id === 'paused_squat' ? 'squat'
-    : 'squat';
+  const liftKey = inferLiftKey(ex.id) ?? 'squat';
   const pct = getRpePct(ex.reps, ex.rpeTarget);
   const e1rmVal = profile.e1rm[liftKey] || 200;
   const assistanceMultiplier = ex.tag === 'PRIMARY' ? 1.0 : ex.tag === 'ASSIST' ? 0.75 : 0.60;
   const prescribedLoad = ex.prescribedLoad ?? Math.round(e1rmVal * pct * assistanceMultiplier / 2.5) * 2.5;
 
+  const liftLvProfile = resolveLvProfile(profile, liftKey);
   const rolling = profile.rollingE1rm[liftKey] || 200;
-  const e1rmResult = ensembleE1RM({ load, reps, rpe, velocity }, profile.rpeTable, profile.rpeCalibration, rolling, 0.3);
+  const e1rmResult = ensembleE1RM({ load, reps, rpe, velocity, lastRepVelocity }, profile.rpeTable, profile.rpeCalibration, rolling, 0.3, liftLvProfile);
   const e1rmDiff = ((e1rmResult.session - rolling) / rolling * 100).toFixed(1);
 
   // Individual method breakdown for transparency
-  const methodBreakdown = calculateE1RM({ load, reps, rpe, velocity }, profile.rpeTable, profile.rpeCalibration, profile.lvProfile);
+  const methodBreakdown = calculateE1RM({ load, reps, rpe, velocity, lastRepVelocity }, profile.rpeTable, profile.rpeCalibration, liftLvProfile);
 
-  // VBT-RPE divergence flag
-  const vbtRpeDivergence = (() => {
-    if (!profile.lvProfile || velocity === undefined || methodBreakdown.vbtE1RM === undefined) return null;
+  // VBT/LRV-vs-RPE divergence flag — prefer LRV when both are provided (more diagnostic for RPE
+  // miscalibration than mean velocity, which is biased by warm-up reps in the set).
+  const rpeDivergenceWarning = (() => {
+    if (!liftLvProfile || liftLvProfile.n < 10) return null;
+    if (lastRepVelocity !== undefined && lastRepVelocity > 0) {
+      const expectedV = expectedLastRepVelocity(reps, rpe, profile.rpeTable, liftLvProfile);
+      if (expectedV <= 0) return null;
+      const deviation = Math.abs(lastRepVelocity - expectedV) / expectedV;
+      if (deviation > 0.10) {
+        const direction = lastRepVelocity > expectedV ? -0.5 : 0.5;
+        const impliedRpe = Math.max(5, Math.min(10, rpe + direction));
+        return `Last-rep velocity ${lastRepVelocity.toFixed(2)} m/s suggests RPE ~${impliedRpe.toFixed(1)}, not ${rpe}`;
+      }
+      return null;
+    }
+    if (velocity === undefined || methodBreakdown.vbtE1RM === undefined) return null;
     const rpeBasedE1rm = methodBreakdown.rpeE1RM;
     const vbtBasedE1rm = methodBreakdown.vbtE1RM;
     const divergence = Math.abs(vbtBasedE1rm - rpeBasedE1rm) / rpeBasedE1rm;
@@ -128,6 +140,7 @@ export default function TopSet() {
       prescribedRpeTarget: ex.rpeTarget,
       actualRpe: rpe,
       velocity,
+      lastRepVelocity,
       e1rm: e1rmResult.session,
       sfi: calculateSetSFI(rpe, reps, ex.id, true),
     };
@@ -204,29 +217,48 @@ export default function TopSet() {
             </div>
           </div>
           {showVelocity && (
-            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <input
-                type="number"
-                step={0.01}
-                value={velocity ?? ''}
-                onChange={e => setVelocity(e.target.value ? Number(e.target.value) : undefined)}
-                placeholder="m/s"
-                style={{
-                  fontFamily: T.mono, fontSize: 14, fontWeight: 500,
-                  background: 'transparent', border: `1px solid ${T.line}`,
-                  color: T.text, padding: '8px 10px', outline: 'none', width: 100,
-                }}
-              />
-              <span style={{ fontSize: 11, color: T.textDim }}>Mean propulsive velocity (m/s)</span>
-            </div>
+            <>
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  type="number"
+                  step={0.01}
+                  value={velocity ?? ''}
+                  onChange={e => setVelocity(e.target.value ? Number(e.target.value) : undefined)}
+                  placeholder="m/s"
+                  style={{
+                    fontFamily: T.mono, fontSize: 14, fontWeight: 500,
+                    background: 'transparent', border: `1px solid ${T.line}`,
+                    color: T.text, padding: '8px 10px', outline: 'none', width: 100,
+                  }}
+                />
+                <span style={{ fontSize: 11, color: T.textDim }}>Mean propulsive velocity (m/s)</span>
+              </div>
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  type="number"
+                  step={0.01}
+                  value={lastRepVelocity ?? ''}
+                  onChange={e => setLastRepVelocity(e.target.value ? Number(e.target.value) : undefined)}
+                  placeholder="m/s"
+                  style={{
+                    fontFamily: T.mono, fontSize: 14, fontWeight: 500,
+                    background: 'transparent', border: `1px solid ${T.line}`,
+                    color: T.text, padding: '8px 10px', outline: 'none', width: 100,
+                  }}
+                />
+                <span style={{ fontSize: 11, color: T.textDim }}>Last-rep velocity (m/s) — objective RPE check</span>
+              </div>
+            </>
           )}
         </div>
 
-        {/* VBT-RPE divergence warning */}
-        {vbtRpeDivergence && (
+        {/* VBT/LRV vs RPE divergence warning */}
+        {rpeDivergenceWarning && (
           <div style={{ marginTop: 14, padding: '10px 12px', background: 'rgba(232,193,78,0.08)', borderLeft: `2px solid ${T.caution}` }}>
-            <span className="tns-mono" style={{ fontSize: 9, color: T.caution, letterSpacing: '0.08em' }}>VBT-RPE DIVERGENCE</span>
-            <div style={{ marginTop: 4, fontSize: 12, color: T.textDim }}>{vbtRpeDivergence}</div>
+            <span className="tns-mono" style={{ fontSize: 9, color: T.caution, letterSpacing: '0.08em' }}>
+              {lastRepVelocity !== undefined && lastRepVelocity > 0 ? 'LRV-RPE DIVERGENCE' : 'VBT-RPE DIVERGENCE'}
+            </span>
+            <div style={{ marginTop: 4, fontSize: 12, color: T.textDim }}>{rpeDivergenceWarning}</div>
           </div>
         )}
 

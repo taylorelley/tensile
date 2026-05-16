@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import type { Session } from '../../store';
 import { Phone, TabBar, T, Chart, ChartBars, ChartEmpty } from '../../shared';
-import { volumeBudget } from '../../engine';
+import { volumeBudget, ewmaAclrSeries } from '../../engine';
 
 function weeklyAverage(
   sessions: Session[],
@@ -80,46 +80,48 @@ export default function Volume() {
   const sessionsLogged = sessions.filter((s) => s.status === 'COMPLETE').length;
   const totalSessions = sessions.length;
 
-  // Compute weekly ACLR (week-over-week SFI ratio) and peak
+  // EWMA-based ACLR (Williams et al. 2017): per-day acute/chronic ratio from sRPE-load,
+  // falling back to SFI when sRPE wasn't logged. Sampled once per week for the trend chart.
   const sortedCompleted = [...sessions]
     .filter((s) => s.status === 'COMPLETE')
     .sort((a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime());
 
-  function computeWeeklyAclr(): { values: number[]; peak: number; peakWeek: string } {
-    if (sortedCompleted.length < 2) return { values: [], peak: 0, peakWeek: '—' };
-    const start = new Date(currentBlock?.startDate ?? sortedCompleted[0].scheduledDate).getTime();
-    const weekMap = new Map<number, number[]>();
-    for (const s of sortedCompleted) {
-      const daysSince = Math.floor(
-        (new Date(s.scheduledDate).getTime() - start) / (1000 * 60 * 60 * 24)
-      );
-      const week = Math.floor(daysSince / 7);
-      if (!weekMap.has(week)) weekMap.set(week, []);
-      weekMap.get(week)!.push(s.sfi);
+  function computeAclr(): { values: number[]; peak: number; peakWeek: string; calibrating: boolean } {
+    if (sortedCompleted.length === 0) return { values: [], peak: 0, peakWeek: '—', calibrating: true };
+    const aclrInput = sortedCompleted.map(s => ({
+      date: s.scheduledDate,
+      load: s.srpeLoad ?? s.sfi ?? 0,
+    }));
+    const lastDate = new Date(sortedCompleted[sortedCompleted.length - 1].scheduledDate);
+    const { ratios, calibratingDays } = ewmaAclrSeries(aclrInput, lastDate);
+    if (ratios.length === 0) return { values: [], peak: 0, peakWeek: '—', calibrating: true };
+
+    // Sample one ratio per week: take the last day of each week's window
+    const blockStart = new Date(currentBlock?.startDate ?? sortedCompleted[0].scheduledDate).getTime();
+    const firstSessionDay = new Date(sortedCompleted[0].scheduledDate).getTime();
+    const weekValues: number[] = [];
+    const lastWeekIdx = Math.floor((lastDate.getTime() - blockStart) / (1000 * 60 * 60 * 24 * 7));
+    for (let w = 0; w <= lastWeekIdx; w++) {
+      const endOfWeekTs = blockStart + (w * 7 + 6) * 24 * 60 * 60 * 1000;
+      const dayIdx = Math.floor((endOfWeekTs - firstSessionDay) / (1000 * 60 * 60 * 24));
+      const clamped = Math.max(0, Math.min(ratios.length - 1, dayIdx));
+      weekValues.push(Math.round(ratios[clamped] * 100) / 100);
     }
-    const weeks = Array.from({ length: Math.max(...Array.from(weekMap.keys())) + 1 }, (_, i) => i);
-    const avgs = weeks.map(w => {
-      const vals = weekMap.get(w);
-      return vals && vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-    });
-    const aclrs: number[] = [];
+
     let peak = 0;
     let peakWeek = '—';
-    for (let i = 1; i < avgs.length; i++) {
-      const prev = avgs[i - 1];
-      const curr = avgs[i];
-      const aclr = prev > 0 && curr > 0 ? curr / prev : 0;
-      aclrs.push(aclr);
-      if (aclr > peak) {
-        peak = aclr;
+    for (let i = 0; i < weekValues.length; i++) {
+      if (weekValues[i] > peak) {
+        peak = weekValues[i];
         peakWeek = `wk ${i + 1}`;
       }
     }
-    return { values: aclrs, peak, peakWeek };
+    const calibrating = calibratingDays < 14;
+    return { values: weekValues, peak, peakWeek, calibrating };
   }
 
-  const { values: aclrTrend, peak: peakAclr, peakWeek: peakAclrWeek } = computeWeeklyAclr();
-  const aclrHasData = aclrTrend.length > 0;
+  const { values: aclrTrend, peak: peakAclr, peakWeek: peakAclrWeek, calibrating: aclrCalibrating } = computeAclr();
+  const aclrHasData = aclrTrend.length > 0 && !aclrCalibrating;
 
   const blockLabel = currentBlock
     ? `Block ${currentBlock.id.slice(-2)} · ${currentBlock.phase}`
@@ -273,7 +275,7 @@ export default function Volume() {
         {/* ACLR trend */}
         <div className="tns-eyebrow" style={{ marginBottom: 8 }}>
           ACLR trend ·{' '}
-          <span style={{ color: T.caution }}>WEEK-OVER-WEEK</span>
+          <span style={{ color: T.caution }}>EWMA · λa 0.25 · λc 0.069</span>
         </div>
         <div style={{ marginBottom: 22 }}>
           {aclrHasData ? (
@@ -291,7 +293,7 @@ export default function Volume() {
                 }}
               >
                 {aclrTrend.map((_, i) => (
-                  <span key={i}>W{i + 2}</span>
+                  <span key={i}>W{i + 1}</span>
                 ))}
               </div>
               {aclrTrend.some(v => v > 1.5) && (
@@ -301,6 +303,8 @@ export default function Volume() {
                 </div>
               )}
             </>
+          ) : aclrCalibrating ? (
+            <ChartEmpty message="ACLR CALIBRATING · 14-DAY BASELINE" h={80} />
           ) : (
             <ChartEmpty message="NO ACLR DATA YET" h={80} />
           )}

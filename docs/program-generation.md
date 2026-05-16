@@ -353,13 +353,19 @@ flowchart LR
 
 **What it uses:** The week-by-week best estimated 1RM across completed sessions in the current block. A peak is declared when the maximum value happened at least two weeks before the end, *both* of the last two weeks are declining, and progress was actually made above the starting value. A stall is declared after week 3 if the slope across the last three weeks is essentially flat and the lifter hasn't built more than 1% above their starting e1RM.
 
-**What it changes:** Both signals contribute to the deload score (6.8). In addition, when a peak is detected at the *end* of a development block, the week the peak landed on is appended to the lifter's TTP history, and the next time the generator runs it uses an EWMA of past peak weeks (α = 0.4) as the new time-to-peak estimate. So a lifter who consistently peaks at week 5 will, after a few blocks, see Tensile generate 5-week blocks instead of the default 6-week ones.
+**What it changes:** Both signals contribute to the deload score (6.8). In addition, when a peak is detected at the *end* of a development block, the week the peak landed on is appended to the lifter's TTP history.
+
+The TTP estimate update is then **gated by a two-block confirmation rule**. A single off-target peak — caused by a week of poor sleep, illness, or unusual stress — should not durably shrink or stretch the next block. So the first off-target peak is recorded as a *pending candidate* and the estimate is held. If the next block's peak lands in the same direction (both earlier or both later than the current estimate) and within ±1 week of the candidate, the gate fires: the EWMA (α = 0.4) is applied across both observations in chronological order and the estimate moves. If the next peak is on-target or contradicts the candidate (different direction or jumps >1 wk), the candidate is discarded and the estimate stays put. Every transition — `TTP_CANDIDATE_RECORDED`, `TTP_ESTIMATE_UPDATED`, `TTP_CANDIDATE_CLEARED`, `TTP_CANDIDATE_REPLACED` — is written to the block's audit log so the lifter can see why their next block was the length it was.
+
+So a lifter who consistently peaks at week 5 will, after **two** consecutive 5-week peaks, see Tensile generate ~5-week blocks instead of the default 6-week ones; a one-off early peak from a bad-sleep week does not shrink the next block.
 
 ### 6.7 ACLR (Acute-Chronic Load Ratio) — *is fatigue spiking?*
 
 **What it asks:** Is recent training load running disproportionately ahead of the lifter's recent baseline?
 
-**What it uses:** The week-over-week ratio of average Session Fatigue Index. ACLR > 1.5 means this week's load is more than 50% above last week's — a known marker for elevated injury risk in the sports-science literature.
+**What it uses:** An **EWMA acute:chronic ratio** over daily sRPE-load (Williams et al. 2017), falling back to Session Fatigue Index when sRPE wasn't logged. The acute EWMA uses λ ≈ 0.25 (7-day half-life); the chronic EWMA uses λ ≈ 0.069 (28-day half-life). Days without sessions contribute 0 — the decay continues so the chronic baseline doesn't get artificially flattered by rest weeks. ACLR > 1.5 means recent training load is running more than 50% above the 28-day-weighted chronic baseline.
+
+For the first 14 days of training history the chronic baseline is immature; the system shows the chart as *calibrating* rather than emitting a false warning. This — combined with the EWMA's exponential decay — is what stops the programmed volume drop between Accumulation and Realisation from triggering the warning, which the old week-over-week ratio could not avoid.
 
 **What it changes:** It does not modify the prescription directly, but the block review surfaces an amber warning when any week's ACLR exceeds 1.5, the deload score adds 1 point when the flag is on, and the warning is logged to the block's audit log.
 
@@ -571,18 +577,18 @@ For engineers who want to look at the implementation, every section above maps t
 | Profile shape (§2, §3)                   | `tensile-app/src/store.ts` — `UserProfile`                                                                                                      |
 | Persistence (§1, §3)                     | `tensile-app/src/idbStorage.ts` — IndexedDB adapter with localStorage fallback and migration                                                    |
 | Onboarding screens (§2)                  | `tensile-app/src/screens/onboarding/` (Welcome, Biometrics — incl. novice gate, Baselines, WeakPoint, History, Schedule, FirstBlock)             |
-| VBT calibration (§2, §6.1)               | `tensile-app/src/screens/session/VbtCalibration.tsx` — linear regression of load on velocity, stored as `profile.lvProfile`                     |
+| VBT calibration (§2, §6.1)               | `tensile-app/src/screens/session/VbtCalibration.tsx` — linear regression of load on velocity. Stored either globally as `profile.lvProfile` (all-lifts fallback) or per-lift in `profile.lvProfiles[squat\|bench\|deadlift]`. Resolved at lookup via `resolveLvProfile` in `engine.ts`. |
 | Per-session logging (§3, §7)             | `tensile-app/src/screens/session/` (Wellness with manual HRV, ReadinessBrief, TopSet, DropProtocol, Summary) + `logSet` / `completeSession` in `store.ts` |
 | Block generator pipeline (§4)            | `tensile-app/src/store.ts` — `generateBlock`, `generateFirstBlock`, `generateNextDevelopmentBlock`, `generateDeloadBlock`, `generatePivotBlock`, `generateRestBlock` |
 | Weekly day templates and weak-point swap (§5) | `tensile-app/src/store.ts` — `createDayPlan`; `tensile-app/src/engine.ts` — `getAccessoryTemplate`                                          |
 | Exercise catalog (§5)                    | `tensile-app/src/exerciseCatalog.ts` — ~70 builtins with `primaryMuscles`, `efc`, and `weakPointTargets`                                        |
 | Ensemble e1RM (§6.1)                     | `tensile-app/src/engine.ts` — `calculateE1RM`, `ensembleE1RM`                                                                                    |
-| Personalised RPE table (§6.2)            | `tensile-app/src/engine.ts` — `DEFAULT_RPE_TABLE`, `getRpePct`, `personalizeRpeTable`, `isRpeOutlier`                                            |
+| Personalised RPE table (§6.2)            | `tensile-app/src/engine.ts` — `DEFAULT_RPE_TABLE`, `getRpePct`, `personalizeRpeTable`, `isRpeOutlier`, `detectRpeOutlier` (load + LRV check), `expectedLastRepVelocity`. LRV input captured in `TopSet.tsx` / `DropProtocol.tsx` under the velocity disclosure. |
 | Session Fatigue Index (§6.3)             | `tensile-app/src/engine.ts` — `calculateSetSFI`, `calculateSessionSFI`, `DEFAULT_EFC` (~70 entries)                                              |
 | Readiness Composite Score (§6.4, §7)     | `tensile-app/src/engine.ts` — `calculateRCS`, `rcsBand`; UI in `screens/session/Wellness.tsx` and `screens/block/Readiness.tsx`                  |
 | Volume budget and muscle-group tracking (§6.5) | `tensile-app/src/engine.ts` — `volumeBudget`; `weeklyMuscleVolume` aggregation in `store.ts`; visualised in `screens/block/Volume.tsx`     |
-| Peak / stall detection and TTP refinement (§6.6) | `tensile-app/src/engine.ts` — `detectPeak`, `detectStall`; TTP EWMA update in `generateNextDevelopmentBlock`                              |
-| ACLR (§6.7)                              | `tensile-app/src/screens/block/Volume.tsx` — `computeWeeklyAclr`                                                                                 |
+| Peak / stall detection and TTP refinement (§6.6) | `tensile-app/src/engine.ts` — `detectPeak`, `detectStall`; TTP confirmation gate + EWMA update in `generateNextDevelopmentBlock`. Pending candidate stored as `profile.ttpPendingPeak`. |
+| ACLR (§6.7)                              | `tensile-app/src/engine.ts` — `computeEwmaAclr`, `ewmaAclrSeries` (Williams 2017 EWMA). Consumed by `tensile-app/src/screens/block/Volume.tsx` (trend chart) and `tensile-app/src/screens/deload/DeloadRec.tsx` (deload-score flag). |
 | Deload score (§6.8)                      | `tensile-app/src/engine.ts` — `calculateDeloadScore`, `deloadRecommendation`; week-end auto-eval in `completeSession`; UI in `screens/deload/DeloadRec.tsx` |
 | Accessory responsiveness (§6.9)          | `tensile-app/src/engine.ts` — `pearsonCorrelation`; block-end computation in `generateNextDevelopmentBlock`                                     |
 | Session duration estimator (§6.10)       | `tensile-app/src/engine.ts` — `estimateSessionDuration`; cap enforcement in `createDayPlan`                                                     |
