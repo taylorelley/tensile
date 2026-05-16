@@ -5,6 +5,11 @@ import { T, Phone, PrimaryBtn } from '../../shared';
 import { calculateSetSFI } from '../../engine';
 import type { SetLog, SessionExercise } from '../../store';
 
+function makeSetId(suffix?: string): string {
+  const rand = Math.random().toString(36).slice(2, 9);
+  return `set-${Date.now()}-${suffix ? `${suffix}-${rand}` : rand}`;
+}
+
 interface OverrideOption {
   icon: string;
   label: string;
@@ -70,7 +75,7 @@ export default function Override() {
         const lastTopSet = [...sets].reverse().find(s => s.setType === 'TOP_SET' && s.exerciseId === currentExId);
         const source = lastBackOff || lastTopSet || sets[sets.length - 1];
         const newSet: SetLog = {
-          id: `set-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          id: makeSetId(),
           exerciseId: source.exerciseId,
           setType: 'BACK_OFF',
           prescribedLoad: source.prescribedLoad,
@@ -149,7 +154,7 @@ export default function Override() {
         : null;
       if (lastSet) {
         const correctedSet: SetLog = {
-          id: `set-${Date.now()}-load-mod`,
+          id: makeSetId('load-mod'),
           exerciseId: lastSet.exerciseId,
           setType: lastSet.setType,
           prescribedLoad: lastSet.prescribedLoad,

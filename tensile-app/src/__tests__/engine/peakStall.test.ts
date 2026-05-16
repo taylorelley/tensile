@@ -147,11 +147,6 @@ describe('detectStall', () => {
   })
 
   it('declining last 3 values is also a stall if max ≤ start * 1.01', () => {
-    const trend = [100, 100, 99, 99, 98]
-    // slope = (98-99)/2 = -0.5 → Math.abs(-0.5) < 0.5 is FALSE (equal, not less)
-    // slope exactly -0.5 is NOT < 0.5 so this might not stall
-    // Actually: Math.abs(slope) < 0.5 → need |slope| strictly less than 0.5
-    // Let's use a gentler decline
     const trend2 = [100, 100, 100, 99.8, 99.9]
     const slope = (99.9 - 100) / 2 // = -0.05
     expect(Math.abs(slope)).toBeLessThan(0.5) // sanity check

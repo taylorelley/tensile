@@ -10,6 +10,7 @@ import {
   DEFAULT_RPE_TABLE,
   setConstants,
   DEFAULT_CONSTANTS,
+  type RpeTableMeta,
 } from '../../engine'
 
 describe('getRpePct', () => {
@@ -194,14 +195,14 @@ describe('personalizeRpeTable', () => {
   })
 
   it('observations window is capped at rpeOutlierWindow', () => {
-    let meta = undefined
+    let meta: RpeTableMeta | undefined = undefined
     let table = { ...DEFAULT_RPE_TABLE }
     for (let i = 0; i < 25; i++) {
-      const r = personalizeRpeTable(table, 100, 5, 8, 150, meta as any)
+      const r = personalizeRpeTable(table, 100, 5, 8, 150, meta)
       table = r.table
-      meta = r.meta as any
+      meta = r.meta
     }
-    const obs = (meta as any).observations['5@8']
+    const obs = meta!.observations!['5@8']
     expect(obs.length).toBeLessThanOrEqual(DEFAULT_CONSTANTS.rpeOutlierWindow)
   })
 
