@@ -10,7 +10,10 @@
     "preview": "vite preview",
     "replay": "tsx replay/cli.ts",
     "replay:grid": "tsx replay/cli.ts --grid",
-    "replay:gate": "tsx replay/cli.ts --fixture linearGain --golden replay/golden.json --fail-on-regression"
+    "replay:gate": "tsx replay/cli.ts --fixture linearGain --golden replay/golden.json --fail-on-regression",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "react": "^19.2.6",
@@ -24,6 +27,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/coverage-v8": "^4.1.6",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
@@ -32,6 +36,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
-    "vite-plugin-pwa": "^1.3.0"
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^4.1.6"
   }
 }
