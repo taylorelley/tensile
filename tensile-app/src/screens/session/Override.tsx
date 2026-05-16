@@ -7,7 +7,7 @@ import type { SetLog, SessionExercise } from '../../store';
 
 function makeSetId(suffix?: string): string {
   const rand = Math.random().toString(36).slice(2, 9);
-  return `set-${Date.now()}-${suffix ?? rand}`;
+  return `set-${Date.now()}-${suffix ? `${suffix}-${rand}` : rand}`;
 }
 
 interface OverrideOption {
