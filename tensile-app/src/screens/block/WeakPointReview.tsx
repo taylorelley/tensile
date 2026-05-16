@@ -6,71 +6,13 @@ import { Phone, TabBar, T } from '../../shared';
 export default function WeakPointReview() {
   const navigate = useNavigate();
   const profile = useStore((s) => s.profile);
-  const blocks = useStore((s) => s.blocks);
 
   const weakPoints = profile.weakPoints;
 
-  // Compute accessory responsiveness on-the-fly from all completed sessions
-  function computeAccessoryResponsiveness(blocks: ReturnType<typeof useStore.getState>['blocks']): Record<string, { corr: number; lift: string }> {
-    const allBlocks = blocks;
-    const completedSessions = allBlocks.flatMap((b) => b.sessions).filter((s) => s.status === 'COMPLETE');
-    if (completedSessions.length < 4) return {};
-
-    const primaryMap: Record<string, string> = {
-      barbell_back_squat: 'squat',
-      bench_press: 'bench',
-      conventional_deadlift: 'deadlift',
-    };
-
-    const accessoryVolumes: Record<string, number[]> = {};
-    const primaryE1rms: Record<string, number[]> = {};
-    const accessoryLiftMap: Record<string, string> = {};
-
-    for (const sess of completedSessions) {
-      const primarySet = sess.sets.find((set) => primaryMap[set.exerciseId]);
-      if (!primarySet) continue;
-      const primaryLift = primaryMap[primarySet.exerciseId];
-
-      for (const set of sess.sets) {
-        if (primaryMap[set.exerciseId]) continue; // skip primary
-        const vol = set.actualLoad * set.actualReps;
-        if (!accessoryVolumes[set.exerciseId]) {
-          accessoryVolumes[set.exerciseId] = [];
-          primaryE1rms[set.exerciseId] = [];
-        }
-        accessoryVolumes[set.exerciseId].push(vol);
-        primaryE1rms[set.exerciseId].push(primarySet.e1rm);
-        accessoryLiftMap[set.exerciseId] = primaryLift;
-      }
-    }
-
-    const result: Record<string, { corr: number; lift: string }> = {};
-    for (const exId of Object.keys(accessoryVolumes)) {
-      const vols = accessoryVolumes[exId];
-      const e1rms = primaryE1rms[exId];
-      if (vols.length < 3) continue;
-
-      // Simple correlation coefficient
-      const n = vols.length;
-      const sumV = vols.reduce((a, b) => a + b, 0);
-      const sumE = e1rms.reduce((a, b) => a + b, 0);
-      const sumVE = vols.reduce((sum, v, i) => sum + v * e1rms[i], 0);
-      const sumV2 = vols.reduce((sum, v) => sum + v * v, 0);
-      const sumE2 = e1rms.reduce((sum, e) => sum + e * e, 0);
-
-      const denom = Math.sqrt((n * sumV2 - sumV * sumV) * (n * sumE2 - sumE * sumE));
-      if (denom === 0) continue;
-      const corr = (n * sumVE - sumV * sumE) / denom;
-      result[exId] = { corr: Math.round(corr * 100) / 100, lift: accessoryLiftMap[exId] };
-    }
-
-    return result;
-  }
-
-  const accessoryResponsiveness = computeAccessoryResponsiveness(blocks);
-
+  // Use stored accessory responsiveness from block-end correlation computation
+  const accessoryResponsiveness = profile.accessoryResponsiveness;
   const entries = Object.entries(accessoryResponsiveness).filter(
-    ([, v]) => v.corr !== 0
+    ([, v]) => v !== 0
   );
 
   const blockLabel = 'Block review';
@@ -163,7 +105,7 @@ export default function WeakPointReview() {
           </div>
         ) : (
           <div style={{ border: `1px solid ${T.line}` }}>
-            {entries.map(([name, item], i) => (
+            {entries.map(([name, corr], i) => (
               <div
                 key={name}
                 style={{
@@ -179,9 +121,6 @@ export default function WeakPointReview() {
               >
                 <span style={{ fontSize: 12.5, flex: 1, textTransform: 'capitalize' }}>
                   {name.replace(/_/g, ' ')}
-                  <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, marginLeft: 6, textTransform: 'uppercase' }}>
-                    {item.lift}
-                  </span>
                 </span>
                 {/* mini correlation bar */}
                 <div
@@ -205,11 +144,11 @@ export default function WeakPointReview() {
                   <div
                     style={{
                       position: 'absolute',
-                      left: item.corr >= 0 ? '50%' : `${50 + item.corr * 50}%`,
-                      width: Math.abs(item.corr) * 50 + '%',
+                      left: corr >= 0 ? '50%' : `${50 + corr * 50}%`,
+                      width: Math.abs(corr) * 50 + '%',
                       top: 0,
                       bottom: 0,
-                      background: item.corr >= 0 ? T.good : T.bad,
+                      background: corr >= 0 ? T.good : T.bad,
                     }}
                   />
                 </div>
@@ -217,13 +156,13 @@ export default function WeakPointReview() {
                   className="tns-mono"
                   style={{
                     fontSize: 12,
-                    color: item.corr >= 0 ? T.good : T.bad,
+                    color: corr >= 0 ? T.good : T.bad,
                     minWidth: 36,
                     textAlign: 'right',
                   }}
                 >
-                  {item.corr > 0 ? '+' : ''}
-                  {item.corr.toFixed(2)}
+                  {corr > 0 ? '+' : ''}
+                  {corr.toFixed(2)}
                 </span>
               </div>
             ))}

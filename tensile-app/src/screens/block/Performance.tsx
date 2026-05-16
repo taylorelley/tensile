@@ -35,6 +35,7 @@ export default function Performance() {
   const navigate = useNavigate();
   const currentBlock = useStore((s) => s.currentBlock);
   const profile = useStore((s) => s.profile);
+  const exportData = useStore((s) => s.exportData);
 
   const sessions = currentBlock?.sessions ?? [];
   const startDate = currentBlock?.startDate ?? '';
@@ -94,7 +95,7 @@ export default function Performance() {
   const deadliftPeak = detectPeak(deadliftTrendFiltered, minimumTTP, blockWeek);
   const deadliftStall = detectStall(deadliftTrendFiltered, blockWeek);
 
-  const squatPeakWeek = squatPeak ? squatTrend.indexOf(Math.max(...squatTrendFiltered)) : -1;
+  const squatPeakWeek = squatPeak ? squatTrendFiltered.indexOf(Math.max(...squatTrendFiltered)) : -1;
 
   return (
     <Phone>
@@ -304,6 +305,26 @@ export default function Performance() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Data export */}
+        <div style={{ marginTop: 18, textAlign: 'center' }}>
+          <span
+            className="tns-mono"
+            style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }}
+            onClick={() => {
+              const data = exportData();
+              const blob = new Blob([data], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `tensile-export-${new Date().toISOString().split('T')[0]}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+          >
+            EXPORT DATA →
+          </span>
         </div>
       </div>
       <TabBar

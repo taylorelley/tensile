@@ -29,6 +29,8 @@ export default function DropProtocol() {
   const profile = useStore(s => s.profile);
   const logSet = useStore(s => s.logSet);
   const [rpe, setRpe] = useState(7);
+  const [velocity, setVelocity] = useState<number | undefined>(undefined);
+  const [showVelocity, setShowVelocity] = useState(false);
 
   if (!currentSession || !block) {
     return (
@@ -71,12 +73,13 @@ export default function DropProtocol() {
     );
   }
 
-  const backOffLoad = Math.round(topSet.actualLoad * (1 - getBackOffDrop(block.phase)) / 2.5) * 2.5;
-  const stopRpe = topSet.prescribedRpeTarget;
+  const ex = currentSession.exercises[currentSession.currentExerciseIndex || 0];
+  const backOffLoad = ex?.backOffLoad ?? Math.round(topSet.actualLoad * (1 - getBackOffDrop(block.phase, block.week, profile.ttpEstimate || 6)) / 2.5) * 2.5;
+  const stopRpe = ex?.rpeTarget ?? topSet.prescribedRpeTarget;
   const backOffSetsDone = currentSession.sets.filter(s => s.setType === 'BACK_OFF' && s.exerciseId === currentExId).length;
   const currentSetNum = backOffSetsDone + 1;
-
-  const isTerminating = rpe >= stopRpe;
+  const maxBackOffSets = 8;
+  const isTerminating = rpe >= stopRpe || backOffSetsDone >= maxBackOffSets;
 
   const lastBackOff = currentSession.sets.filter(s => s.setType === 'BACK_OFF' && s.exerciseId === currentExId).slice(-1)[0];
   const previousRpe = lastBackOff?.actualRpe;
@@ -93,7 +96,7 @@ export default function DropProtocol() {
       : topSet.exerciseId.includes('deadlift') ? 'deadlift'
       : 'squat';
     const e1rmResult = ensembleE1RM(
-      { load: backOffLoad, reps: topSet.prescribedReps, rpe },
+      { load: backOffLoad, reps: topSet.prescribedReps, rpe, velocity },
       profile.rpeTable,
       profile.rpeCalibration,
       profile.rollingE1rm[liftKey] || 200,
@@ -109,19 +112,25 @@ export default function DropProtocol() {
       actualReps: topSet.prescribedReps,
       prescribedRpeTarget: stopRpe,
       actualRpe: rpe,
+      velocity,
       e1rm: e1rmResult.session,
       sfi: calculateSetSFI(rpe, topSet.prescribedReps, topSet.exerciseId, false),
     };
   };
 
   const handleLogSet = () => {
+    if (backOffSetsDone >= maxBackOffSets) {
+      navigate('/session/summary');
+      return;
+    }
     logSet(block.id, currentSession.id, buildSetLog());
-    if (rpe >= stopRpe) {
+    if (rpe >= stopRpe || backOffSetsDone + 1 >= maxBackOffSets) {
       navigate('/session/summary');
     }
   };
 
   const handleAddSet = () => {
+    if (backOffSetsDone >= maxBackOffSets) return;
     logSet(block.id, currentSession.id, buildSetLog());
     // stay on this screen — user is extending the back-off voluntarily
   };
@@ -137,9 +146,10 @@ export default function DropProtocol() {
         <div style={{ marginBottom: 18 }}>
           <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Load drop protocol · −{Math.round(getBackOffDrop(block.phase) * 100)}%</div>
           <div style={{ display: 'flex', gap: 5, marginBottom: 10 }}>
-            {Array.from({ length: 8 }).map((_, i) => {
+            {Array.from({ length: maxBackOffSets }).map((_, i) => {
               const isDone = i < backOffSetsDone;
-              const isCurrent = i === backOffSetsDone;
+              const isCurrent = i === backOffSetsDone && backOffSetsDone < maxBackOffSets;
+              const isCapped = i === maxBackOffSets - 1;
               return (
                 <div key={i} style={{
                   flex: 1, padding: '14px 0', textAlign: 'center',
@@ -147,12 +157,12 @@ export default function DropProtocol() {
                   background: isCurrent ? T.accent : isDone ? '#26221a' : 'transparent',
                   color: isCurrent ? '#1a0f08' : isDone ? T.text : T.textMute,
                   fontFamily: T.mono, fontSize: 11, fontWeight: 500,
-                }}>{i === 7 ? 'END' : isDone ? '✓' : isCurrent ? '?' : '—'}</div>
+                }}>{isCapped && !isDone && !isCurrent ? 'CAP' : isDone ? '✓' : isCurrent ? '?' : '—'}</div>
               );
             })}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: T.mono, fontSize: 9, color: T.textMute, letterSpacing: '0.06em' }}>
-            <span>SET 1</span><span>STOP @ RPE {stopRpe}</span><span>CAP 8</span>
+            <span>SET 1</span><span>STOP @ RPE {stopRpe}</span><span>CAP {maxBackOffSets}</span>
           </div>
         </div>
 
@@ -172,6 +182,33 @@ export default function DropProtocol() {
         <div className="tns-eyebrow" style={{ marginBottom: 8 }}>Post-set RPE</div>
         <RPEPad value={rpe} onChange={setRpe} />
 
+        {/* Optional velocity input */}
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="tns-eyebrow">Velocity (optional)</span>
+            <span className="tns-mono" style={{ fontSize: 9, color: T.accent, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => setShowVelocity(!showVelocity)}>
+              {showVelocity ? 'HIDE' : 'ADD VBT →'}
+            </span>
+          </div>
+          {showVelocity && (
+            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input
+                type="number"
+                step={0.01}
+                value={velocity ?? ''}
+                onChange={e => setVelocity(e.target.value ? Number(e.target.value) : undefined)}
+                placeholder="m/s"
+                style={{
+                  fontFamily: T.mono, fontSize: 14, fontWeight: 500,
+                  background: 'transparent', border: `1px solid ${T.line}`,
+                  color: T.text, padding: '8px 10px', outline: 'none', width: 100,
+                }}
+              />
+              <span style={{ fontSize: 11, color: T.textDim }}>Mean propulsive velocity (m/s)</span>
+            </div>
+          )}
+        </div>
+
         <div style={{ marginTop: 16, padding: '12px 14px', background: T.surface, fontSize: 11.5, color: T.textDim, lineHeight: 1.55, borderLeft: `2px solid ${T.caution}` }}>
           <span className="tns-mono" style={{ fontSize: 9, color: T.caution, letterSpacing: '0.08em' }}>NEXT SET PREVIEW</span>
           <div style={{ marginTop: 4 }}>
@@ -180,8 +217,8 @@ export default function DropProtocol() {
         </div>
       </div>
       <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}`, display: 'flex', gap: 8 }}>
-        <PrimaryBtn dim full={false} onClick={handleAddSet}>+ Set</PrimaryBtn>
-        <PrimaryBtn onClick={handleLogSet}>{isTerminating ? 'Finish →' : 'Log set →'}</PrimaryBtn>
+        <PrimaryBtn dim full={false} onClick={handleAddSet}>{backOffSetsDone >= maxBackOffSets ? 'Capped' : '+ Set'}</PrimaryBtn>
+        <PrimaryBtn onClick={handleLogSet}>{isTerminating || backOffSetsDone >= maxBackOffSets ? 'Finish →' : 'Log set →'}</PrimaryBtn>
       </div>
     </Phone>
   );

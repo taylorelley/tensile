@@ -4,6 +4,34 @@ import { useStore } from '../../store';
 import type { Session } from '../../store';
 import { Phone, TabBar, T, Chart, ChartEmpty, Spark } from '../../shared';
 
+function weeklySrpeLoad(
+  sessions: Session[],
+  startDate: string
+): number[] {
+  const start = new Date(startDate).getTime();
+  const weekMap = new Map<number, number[]>();
+  for (const s of sessions) {
+    if (!s.srpeLoad || s.status !== 'COMPLETE') continue;
+    const daysSince = Math.floor(
+      (new Date(s.scheduledDate).getTime() - start) / (1000 * 60 * 60 * 24)
+    );
+    const week = Math.floor(daysSince / 7);
+    if (!weekMap.has(week)) weekMap.set(week, []);
+    weekMap.get(week)!.push(s.srpeLoad);
+  }
+  if (weekMap.size === 0) return [];
+  const maxWeek = Math.max(...Array.from(weekMap.keys()));
+  return Array.from(
+    { length: maxWeek + 1 },
+    (_, i) => {
+      const vals = weekMap.get(i);
+      return vals && vals.length > 0
+        ? Math.round(vals.reduce((a, b) => a + b, 0))
+        : 0;
+    }
+  );
+}
+
 function weeklyRcsTrend(
   sessions: Session[],
   startDate: string
@@ -34,12 +62,16 @@ function weeklyRcsTrend(
 export default function Readiness() {
   const navigate = useNavigate();
   const currentBlock = useStore((s) => s.currentBlock);
+  const profile = useStore((s) => s.profile);
 
   const sessions = currentBlock?.sessions ?? [];
   const startDate = currentBlock?.startDate ?? '';
 
   const rcs = startDate ? weeklyRcsTrend(sessions, startDate) : [];
   const rcsHasData = rcs.some((v) => v > 0);
+
+  const srpeLoad = startDate ? weeklySrpeLoad(sessions, startDate) : [];
+  const srpeLoadHasData = srpeLoad.some((v) => v > 0);
 
   const sortedSessions = [...sessions].sort(
     (a, b) =>
@@ -265,6 +297,94 @@ export default function Readiness() {
             </div>
           </>
         )}
+
+        {/* Weekly sRPE load */}
+        <div className="tns-eyebrow" style={{ marginBottom: 8 }}>
+          Weekly sRPE load
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          {srpeLoadHasData ? (
+            <>
+              <Chart data={srpeLoad} color={T.caution} w={320} h={90} />
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginTop: 4,
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  color: T.textMute,
+                  letterSpacing: '0.06em',
+                }}
+              >
+                <span>W1 · {srpeLoad[0]}</span>
+                <span>
+                  W{Math.ceil(srpeLoad.length / 2)} ·{' '}
+                  {srpeLoad[Math.floor(srpeLoad.length / 2)]}
+                </span>
+                <span>
+                  W{srpeLoad.length} · {srpeLoad[srpeLoad.length - 1]}
+                </span>
+              </div>
+            </>
+          ) : (
+            <ChartEmpty message="NO sRPE LOAD DATA YET" h={90} />
+          )}
+        </div>
+
+        {/* HRV trend */}
+        <div className="tns-eyebrow" style={{ marginBottom: 8 }}>
+          HRV trend
+        </div>
+        <div style={{ border: `1px solid ${T.line}`, padding: '12px 16px', marginBottom: 18 }}>
+          {profile.hrvHistory && profile.hrvHistory.length > 0 ? (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                <div>
+                  <div className="tns-eyebrow" style={{ marginBottom: 4 }}>28-day baseline</div>
+                  <div className="tns-mono" style={{ fontSize: 14 }}>{profile.hrv28DayBaseline ?? '—'} ms</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div className="tns-eyebrow" style={{ marginBottom: 4 }}>Latest reading</div>
+                  <div className="tns-mono" style={{ fontSize: 14 }}>{profile.hrvHistory[profile.hrvHistory.length - 1]} ms</div>
+                </div>
+              </div>
+              <Spark
+                data={profile.hrvHistory.slice(-14)}
+                color={T.good}
+                w={320}
+                h={32}
+              />
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 11,
+                  color: T.textDim,
+                  lineHeight: 1.5,
+                }}
+              >
+                {profile.hrv28DayBaseline && profile.hrvHistory.length > 0 && (() => {
+                  const latest = profile.hrvHistory[profile.hrvHistory.length - 1];
+                  const deviation = ((latest - profile.hrv28DayBaseline) / profile.hrv28DayBaseline) * 100;
+                  const color = deviation >= -5 ? T.good : deviation >= -10 ? T.caution : T.bad;
+                  return (
+                    <span>
+                      Latest deviation from baseline:{' '}
+                      <span className="tns-mono" style={{ color }}>
+                        {deviation >= 0 ? '+' : ''}{deviation.toFixed(1)}%
+                      </span>
+                      {' '}{deviation >= -5 ? '— within normal range' : deviation >= -10 ? '— mild suppression' : '— significant suppression'}
+                    </span>
+                  );
+                })()}
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 11.5, color: T.textDim, textAlign: 'center', padding: '14px 0' }}>
+              No HRV data yet. Add a morning rMSSD reading in the wellness check.
+            </div>
+          )}
+        </div>
 
         {/* Modifier session count */}
         <div style={{ border: `1px solid ${T.line}`, padding: '12px 16px' }}>

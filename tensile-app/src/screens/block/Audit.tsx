@@ -8,6 +8,7 @@ export default function Audit() {
   const currentBlock = useStore((s) => s.currentBlock);
 
   const sessions = currentBlock?.sessions ?? [];
+  const auditLog = currentBlock?.auditLog ?? [];
 
   // Collect audit events from sessions: overrides and notable status changes
   const entries: {
@@ -15,7 +16,19 @@ export default function Audit() {
     date: string;
     type: string;
     detail: string;
+    evidenceTier?: string;
   }[] = [];
+
+  // Engine audit log entries
+  for (const entry of auditLog) {
+    entries.push({
+      wk: entry.timestamp.slice(0, 10),
+      date: entry.timestamp,
+      type: entry.ruleId,
+      detail: `${entry.trigger} → ${entry.action}`,
+      evidenceTier: entry.evidenceTier,
+    });
+  }
 
   for (const s of sessions) {
     // Session status changes
@@ -173,18 +186,29 @@ export default function Audit() {
                   alignItems: 'center',
                 }}
               >
-                <span
-                  className="tns-mono"
-                  style={{
-                    fontSize: 9.5,
-                    color: T.accent,
-                    letterSpacing: '0.08em',
-                    background: 'rgba(255,110,58,0.08)',
-                    padding: '2px 6px',
-                  }}
-                >
-                  {e.type}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span
+                    className="tns-mono"
+                    style={{
+                      fontSize: 9.5,
+                      color: T.accent,
+                      letterSpacing: '0.08em',
+                      background: 'rgba(255,110,58,0.08)',
+                      padding: '2px 6px',
+                    }}
+                  >
+                    {e.type}
+                  </span>
+                  {e.evidenceTier && (
+                    <span className="tns-mono" style={{
+                      fontSize: 8,
+                      color: e.evidenceTier === 'VALIDATED' ? T.good : e.evidenceTier === 'HEURISTIC' ? T.caution : T.textMute,
+                      letterSpacing: '0.06em',
+                    }}>
+                      {e.evidenceTier}
+                    </span>
+                  )}
+                </div>
                 <span
                   className="tns-mono"
                   style={{

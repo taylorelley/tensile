@@ -42,6 +42,19 @@ export default function Summary() {
   const primaryE1rm = isPrimaryLift ? profile.e1rm[liftKey] : null;
   const liftName = ex?.name || 'Primary';
 
+  // Find pre-session baseline: best e1RM from most recent completed session of same lift, or rolling e1RM
+  const preSessionBaseline = (() => {
+    if (!block || !isPrimaryLift) return profile.rollingE1rm[liftKey] || 0;
+    const priorSessions = block.sessions
+      .filter(s => s.status === 'COMPLETE' && s.id !== currentSession.id)
+      .sort((a, b) => new Date(b.completedDate || b.scheduledDate).getTime() - new Date(a.completedDate || a.scheduledDate).getTime());
+    for (const s of priorSessions) {
+      const liftSets = s.sets.filter(set => set.exerciseId === ex?.id && set.setType === 'TOP_SET');
+      if (liftSets.length > 0) return Math.max(...liftSets.map(set => set.e1rm));
+    }
+    return profile.rollingE1rm[liftKey] || 0;
+  })();
+
   const hasMoreExercises = currentIdx < (currentSession.exercises?.length || 0) - 1;
 
   const handleLogSession = () => {
@@ -97,12 +110,11 @@ export default function Summary() {
         {(() => {
           const flags: { color: string; label: string; message: string }[] = [];
 
-          // e1RM gain on primary lift
+          // e1RM gain on primary lift (compare to pre-session baseline, not already-updated rolling)
           const topSets = sets.filter(s => s.setType === 'TOP_SET');
-          if (topSets.length > 0) {
+          if (topSets.length > 0 && preSessionBaseline > 0) {
             const bestE1rm = Math.max(...topSets.map(s => s.e1rm));
-            const prevE1rm = profile.rollingE1rm[liftKey] || bestE1rm;
-            const gain = ((bestE1rm - prevE1rm) / prevE1rm) * 100;
+            const gain = ((bestE1rm - preSessionBaseline) / preSessionBaseline) * 100;
             if (gain >= 1.0) {
               flags.push({ color: T.good, label: 'GAIN', message: `${liftName} e1RM up ${gain.toFixed(1)}% — strong session.` });
             } else if (gain <= -1.0) {

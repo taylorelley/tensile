@@ -18,7 +18,7 @@ export interface e1RMResult {
 export function calculateE1RM(
   set: SetInput,
   userRpeTable: Record<string, number>,
-  userCalibration: { sessions: number; mae: number },
+  userCalibration: { sessions: number; mae: number; trainingAgeYears?: number },
   lvProfile?: { slope: number; intercept: number; n: number }
 ): { repE1RM: number; repConfidence: number; rpeE1RM: number; rpeConfidence: number; vbtE1RM?: number; vbtConfidence?: number } {
   // Method 1: Rep-based (Epley/Brzycki)
@@ -40,14 +40,14 @@ export function calculateE1RM(
   let rpeConfidence = 0.3;
   if (userCalibration.sessions >= 20 && userCalibration.mae <= 0.5) rpeConfidence = 1.0;
   else if (userCalibration.sessions >= 10) rpeConfidence = 0.7;
-  else if (userCalibration.sessions >= 2) rpeConfidence = 0.5;
+  else if ((userCalibration.trainingAgeYears ?? 0) >= 2) rpeConfidence = 0.5;
 
   // Method 3: VBT
   let vbtE1RM: number | undefined;
   let vbtConfidence: number | undefined;
   if (set.velocity !== undefined && lvProfile && lvProfile.n >= 10) {
     vbtE1RM = set.load / (lvProfile.slope * set.velocity + lvProfile.intercept);
-    vbtConfidence = Math.min(1.0, 0.8 + (lvProfile.n - 10) * 0.02);
+    vbtConfidence = Math.min(1.2, 0.8 + (lvProfile.n - 10) * 0.02);
   }
 
   return { repE1RM, repConfidence, rpeE1RM, rpeConfidence, vbtE1RM, vbtConfidence };
@@ -77,11 +77,12 @@ export function ensembleE1RM(
   const session = weightedSum / totalWeight;
   const rolling = alpha * session + (1 - alpha) * previousRolling;
 
-  // Simple CI estimate based on method variance
+  // Weighted CI estimate based on method variance
   const estimates = [repE1RM, rpeE1RM, ...(vbtE1RM !== undefined ? [vbtE1RM] : [])];
-  const mean = estimates.reduce((a, b) => a + b, 0) / estimates.length;
-  const variance = estimates.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / estimates.length;
-  const stdDev = Math.sqrt(variance);
+  const weights = [repConfidence, rpeConfidence, ...(vbtE1RM !== undefined && vbtConfidence !== undefined ? [vbtConfidence] : [])];
+  const weightedMean = estimates.reduce((a, b, i) => a + b * weights[i], 0) / weights.reduce((a, b) => a + b, 0);
+  const weightedVariance = estimates.reduce((a, b, i) => a + weights[i] * Math.pow(b - weightedMean, 2), 0) / weights.reduce((a, b) => a + b, 0);
+  const stdDev = Math.sqrt(weightedVariance);
   const ci95 = (stdDev / session) * 1.96 * 100;
 
   return { session, rolling, confidenceIntervalPct: Math.min(ci95, 15), methodsUsed };
@@ -89,16 +90,103 @@ export function ensembleE1RM(
 
 // §6.2 Session Fatigue Index
 const DEFAULT_EFC: Record<string, number> = {
+  // ── Primary / Squat ──────────────────────────────────────────────────────
   'barbell_back_squat': 1.40,
   'front_squat': 1.40,
-  'conventional_deadlift': 1.35,
+  'zercher_squat': 1.40,
+  'paused_squat': 1.40,
+  'box_squat': 1.35,
+  'high_bar_squat': 1.40,
+  'heel_elevated_squat': 1.30,
+  'safety_bar_squat': 1.40,
+  // ── Primary / Bench ───────────────────────────────────────────────────────
   'bench_press': 0.95,
+  'close_grip_bench': 0.95,
+  'incline_press': 0.95,
+  'paused_bench': 0.95,
+  'spoto_press': 0.95,
+  'board_press': 0.90,
+  'floor_press': 0.90,
+  'dumbbell_bench_press': 0.95,
+  'dips': 0.85,
+  // ── Primary / Overhead ───────────────────────────────────────────────────
   'overhead_press': 1.00,
+  'dumbbell_shoulder_press': 0.95,
+  // ── Primary / Deadlift ───────────────────────────────────────────────────
+  'conventional_deadlift': 1.35,
+  'sumo_deadlift': 1.35,
+  'trap_bar_deadlift': 1.35,
   'romanian_deadlift': 1.25,
+  'good_morning': 1.25,
+  'snatch_grip_deadlift': 1.25,
+  'deficit_deadlift': 1.35,
+  'block_pull': 1.30,
+  'rack_pull': 1.30,
+  // ── Back ─────────────────────────────────────────────────────────────────
   'barbell_row': 0.85,
+  'dumbbell_row': 0.85,
+  'cable_row': 0.85,
+  'lat_pulldown': 0.85,
+  'pull_up': 0.85,
+  'chin_up': 0.85,
+  'chest_supported_row': 0.80,
+  't_bar_row': 0.85,
+  'inverted_row': 0.70,
+  'single_arm_row': 0.85,
+  // ── Chest (Machine / Cable) ─────────────────────────────────────────────
+  'pec_deck': 0.55,
+  'cable_fly': 0.55,
+  'machine_press': 0.75,
+  // ── Shoulders ────────────────────────────────────────────────────────────
+  'face_pull': 0.55,
+  'rear_delt_fly': 0.55,
+  'lateral_raise': 0.55,
+  'upright_row': 0.70,
+  'shrug': 0.55,
+  // ── Legs ─────────────────────────────────────────────────────────────────
   'leg_press': 0.75,
-  'dumbbell_curl': 0.55,
+  'hack_squat': 0.75,
+  'leg_curl': 0.50,
   'leg_extension': 0.50,
+  'calf_raise': 0.50,
+  'seated_calf_raise': 0.50,
+  'bulgarian_split_squat': 0.85,
+  'walking_lunge': 0.85,
+  'glute_bridge': 0.55,
+  'hip_thrust': 0.75,
+  'glute_ham_raise': 0.75,
+  'reverse_hyper': 0.55,
+  'nordic_curl': 0.55,
+  'hip_adductor': 0.40,
+  'hip_abductor': 0.40,
+  // ── Unilateral Legs ──────────────────────────────────────────────────────
+  'single_leg_rdl': 0.80,
+  'step_up': 0.80,
+  'split_squat': 0.85,
+  // ── Arms ─────────────────────────────────────────────────────────────────
+  'dumbbell_curl': 0.55,
+  'tricep_pushdown': 0.55,
+  'tricep_extension': 0.55,
+  'skullcrusher': 0.55,
+  'preacher_curl': 0.55,
+  'hammer_curl': 0.55,
+  'reverse_curl': 0.50,
+  'concentration_curl': 0.50,
+  'bayesian_curl': 0.50,
+  'single_arm_press': 0.90,
+  // ── Core ─────────────────────────────────────────────────────────────────
+  'plank': 0.30,
+  'hanging_leg_raise': 0.40,
+  'ab_wheel': 0.40,
+  'pallof_press': 0.30,
+  'dragon_flag': 0.40,
+  'russian_twist': 0.30,
+  'dead_bug': 0.20,
+  'farmers_walk': 0.40,
+  'suitcase_carry': 0.35,
+  'turkish_get_up': 0.70,
+  'kettlebell_swing': 0.85,
+  // ── Fallback ─────────────────────────────────────────────────────────────
   'default': 0.85,
 };
 
@@ -119,6 +207,7 @@ export interface WellnessInputs {
   muscleSoreness: number; // 1-10 (inverted: 10 = none)
   motivation: number; // 1-10
   stress: number; // 1-10 (inverted: 10 = none)
+  hrvRmssd?: number; // optional manual HRV entry (ms)
 }
 
 export function calculateRCS(
@@ -127,6 +216,8 @@ export function calculateRCS(
   hrv28DayBaseline?: number,
   rpeDrift3Sessions = 0
 ): number {
+  // Use real HRV if provided in wellness, otherwise fall back to synthetic estimate
+  const effectiveHrv7Day = wellness.hrvRmssd !== undefined ? wellness.hrvRmssd : hrv7DayRolling;
   const wqRaw = (
     wellness.sleepQuality * 1.20 +
     wellness.overallFatigue * 1.15 +
@@ -138,8 +229,8 @@ export function calculateRCS(
   const wqNormalised = ((wqRaw - 1) / 9) * 100;
 
   let hrvModifier = 0;
-  if (hrv7DayRolling !== undefined && hrv28DayBaseline !== undefined && hrv28DayBaseline > 0) {
-    const hrvDeviation = (hrv7DayRolling - hrv28DayBaseline) / hrv28DayBaseline;
+  if (effectiveHrv7Day !== undefined && hrv28DayBaseline !== undefined && hrv28DayBaseline > 0) {
+    const hrvDeviation = (effectiveHrv7Day - hrv28DayBaseline) / hrv28DayBaseline;
     hrvModifier = Math.max(-15, Math.min(10, hrvDeviation * 20));
   }
 
@@ -179,8 +270,9 @@ export function detectPeak(e1rmTrend: number[], minimumTTP: number, blockWeek: n
   // Detect peak after 2 consecutive declining weeks: max is not in the last position,
   // the last 2 values are declining, and progress was made above the starting value.
   return (
-    maxIdx < n - 1 &&
+    maxIdx < n - 2 &&
     e1rmTrend[n - 1] < e1rmTrend[n - 2] &&
+    e1rmTrend[n - 2] < e1rmTrend[n - 3] &&
     maxVal > e1rmTrend[0]
   );
 }
@@ -284,16 +376,131 @@ export const DEFAULT_RPE_TABLE: Record<string, number> = {
   '10@10': 0.73, '10@9.5': 0.71, '10@9': 0.69, '10@8.5': 0.67, '10@8': 0.65, '10@7.5': 0.62, '10@7': 0.59,
 };
 
-export function getRpePct(reps: number, rpe: number): number {
+export function getRpePct(reps: number, rpe: number, userTable?: Record<string, number>): number {
   const key = `${reps}@${rpe}`;
+  if (userTable && userTable[key] !== undefined) return userTable[key];
   return DEFAULT_RPE_TABLE[key] || 0.80;
 }
 
-export function getBackOffDrop(phase: string): number {
+/** Update user's RPE table from observed performance. EWMA with α=0.1 toward observed %1RM.
+ *  Returns the updated table and a flag indicating if it's now personalised. */
+export function personalizeRpeTable(
+  currentTable: Record<string, number>,
+  load: number,
+  reps: number,
+  rpe: number,
+  e1rmSession: number
+): { table: Record<string, number>; isPersonalised: boolean } {
+  if (e1rmSession <= 0 || load <= 0) return { table: currentTable, isPersonalised: false };
+  const observedPct = load / e1rmSession;
+  const key = `${reps}@${rpe}`;
+  const currentPct = currentTable[key] ?? DEFAULT_RPE_TABLE[key] ?? 0.80;
+  const alpha = 0.1;
+  const updatedPct = currentPct * (1 - alpha) + observedPct * alpha;
+  const updatedTable = { ...currentTable, [key]: Math.round(updatedPct * 1000) / 1000 };
+  // Consider personalised after 4+ weeks of data (proxy: ≥20 keys have deviated from default)
+  const personalisedKeys = Object.keys(updatedTable).filter(k => {
+    const defaultVal = DEFAULT_RPE_TABLE[k];
+    return defaultVal !== undefined && Math.abs(updatedTable[k] - defaultVal) > 0.005;
+  });
+  return { table: updatedTable, isPersonalised: personalisedKeys.length >= 20 };
+}
+
+/** Check if a logged set is an RPE outlier (observed %1RM deviates >15% from expected).
+ *  Returns true if the set should be flagged/rejected for RPE table updates. */
+export function isRpeOutlier(
+  load: number,
+  reps: number,
+  rpe: number,
+  e1rmSession: number,
+  userTable: Record<string, number>
+): boolean {
+  if (e1rmSession <= 0 || load <= 0) return false;
+  const observedPct = load / e1rmSession;
+  const key = `${reps}@${rpe}`;
+  const expectedPct = userTable[key] ?? DEFAULT_RPE_TABLE[key] ?? 0.80;
+  const deviation = Math.abs(observedPct - expectedPct) / expectedPct;
+  return deviation > 0.15;
+}
+
+/** Estimate session duration in minutes (PRD §7.2.3) */
+export function estimateSessionDuration(exercises: { sets: number; reps: number; rpeTarget: number; tag: string }[]): number {
+  const warmupTime = 15;
+  const avgSetDuration = 0.75; // minutes
+  let workingTime = 0;
+  for (const ex of exercises) {
+    let restMin: number;
+    if (ex.rpeTarget >= 8) restMin = 4;
+    else if (ex.rpeTarget >= 7) restMin = 2.5;
+    else restMin = 1.75;
+    workingTime += ex.sets * (avgSetDuration + restMin);
+  }
+  return Math.round(warmupTime + workingTime);
+}
+
+/** Weak-point accessory template selector (PRD §4.9, §6.7).
+ *  Bias selection toward exercises that target the user's weak point for a given primary lift.
+ *  Returns a list of candidate exercises with priority scores. */
+export function getAccessoryTemplate(
+  primaryLift: string,
+  blockPhase: string,
+  weakPoints: Record<string, string>,
+  catalog: { id: string; name: string; tag: string; defaultSets: number; defaultReps: number; defaultRpe: number; weakPointTargets?: { liftId: string; position: string }[]; primaryMuscles: string[] }[]
+): { id: string; name: string; tag: string; sets: number; reps: number; rpeTarget: number; primaryMuscles: string[]; priority: number }[] {
+  const weakPoint = weakPoints[primaryLift];
+  const candidates = catalog
+    .filter(ex => ex.tag !== 'PRIMARY' && ex.tag !== 'CORE')
+    .map(ex => {
+      const targetsWeakPoint = ex.weakPointTargets?.some(
+        wpt => wpt.liftId === primaryLift && wpt.position === weakPoint
+      );
+      const priority = targetsWeakPoint ? 1.5 : 1.0;
+      // Phase modifiers
+      let reps = ex.defaultReps;
+      let rpe = ex.defaultRpe;
+      if (blockPhase === 'REALISATION') {
+        reps = Math.max(1, reps - 2);
+        rpe = Math.min(10, rpe + 1.0);
+      } else if (blockPhase === 'INTENSIFICATION') {
+        reps = Math.max(1, reps - 1);
+        rpe = Math.min(10, rpe + 0.5);
+      }
+      return {
+        id: ex.id,
+        name: ex.name,
+        tag: ex.tag,
+        sets: ex.defaultSets,
+        reps,
+        rpeTarget: rpe,
+        primaryMuscles: ex.primaryMuscles,
+        priority,
+      };
+    });
+  // Sort by priority descending, then shuffle within same priority for variety
+  candidates.sort((a, b) => b.priority - a.priority);
+  return candidates;
+}
+
+/** Compute Pearson correlation coefficient between two arrays */
+export function pearsonCorrelation(x: number[], y: number[]): number {
+  const n = x.length;
+  if (n !== y.length || n < 2) return 0;
+  const sumX = x.reduce((a, b) => a + b, 0);
+  const sumY = y.reduce((a, b) => a + b, 0);
+  const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
+  const sumX2 = x.reduce((sum, xi) => sum + xi * xi, 0);
+  const sumY2 = y.reduce((sum, yi) => sum + yi * yi, 0);
+  const denom = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+  if (denom === 0) return 0;
+  return (n * sumXY - sumX * sumY) / denom;
+}
+
+export function getBackOffDrop(phase: string, blockWeek = 1, totalBlockWeeks = 6): number {
+  const t = totalBlockWeeks > 1 ? (blockWeek - 1) / (totalBlockWeeks - 1) : 0;
   switch (phase) {
-    case 'ACCUMULATION': return 0.12;
-    case 'INTENSIFICATION': return 0.07;
-    case 'REALISATION': return 0.03;
+    case 'ACCUMULATION': return 0.10 + (0.15 - 0.10) * t; // interpolate 10% → 15%
+    case 'INTENSIFICATION': return 0.05 + (0.08 - 0.05) * t; // interpolate 5% → 8%
+    case 'REALISATION': return 0.02; // minimal back-off, preserve CNS freshness
     default: return 0.12;
   }
 }

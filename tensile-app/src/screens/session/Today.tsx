@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { T, Phone, AppHeader, PrimaryBtn, Spark, TabBar } from '../../shared';
+import { estimateSessionDuration, volumeBudget } from '../../engine';
 
 function getDayName(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00');
@@ -14,6 +15,9 @@ export default function Today() {
   const startSession = useStore(s => s.startSession);
   const updateSession = useStore(s => s.updateSession);
   const generateFirstBlock = useStore(s => s.generateFirstBlock);
+  const deloadRec = useStore(s => s.deloadRecommendation);
+  const clearDeloadRec = useStore(s => s.clearDeloadRecommendation);
+  const generateDeloadBlock = useStore(s => s.generateDeloadBlock);
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -70,8 +74,8 @@ export default function Today() {
 
   // Determine where to resume based on session state
   function getResumeTarget(s: NonNullable<typeof session>): { label: string; path: string } {
-    // No RCS yet → wellness check not done
-    if (!s.rcs || s.rcs === 0) return { label: 'Begin wellness check →', path: '/session/wellness' };
+    // Wellness check not done yet
+    if (!s.wellnessCompleted && s.sets.length === 0) return { label: 'Begin wellness check →', path: '/session/wellness' };
     // RCS done but no sets logged → start warmup
     if (s.sets.length === 0) return { label: 'Resume warm-up →', path: '/session/warmup' };
     // Has sets — find current exercise and its progress
@@ -97,7 +101,7 @@ export default function Today() {
   const resumeTarget = (
     session.status !== 'COMPLETE' &&
     session.status !== 'SKIPPED' &&
-    (session.status === 'IN_PROGRESS' || session.rcs > 0)
+    (session.status === 'IN_PROGRESS' || session.wellnessCompleted)
   ) ? getResumeTarget(session) : null;
 
   function weeklyBestE1rm(exerciseIds: string[]): number[] {
@@ -155,6 +159,34 @@ export default function Today() {
         right={<div style={{ width: 28, height: 28, border: `1px solid ${T.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.mono, fontSize: 11 }}>{profile.sex ? profile.sex[0] : 'U'}</div>}
       />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
+        {/* Deload recommendation banner */}
+        {deloadRec && (
+          <div style={{
+            border: `1px solid ${deloadRec.level === 'urgent' ? T.bad : deloadRec.level === 'strong' ? T.caution : T.line}`,
+            background: deloadRec.level === 'urgent' ? 'rgba(213,106,85,0.08)' : deloadRec.level === 'strong' ? 'rgba(232,193,78,0.08)' : T.surface,
+            padding: '12px 14px', marginBottom: 14,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <span className="tns-mono" style={{
+                  fontSize: 9,
+                  color: deloadRec.level === 'urgent' ? T.bad : deloadRec.level === 'strong' ? T.caution : T.textMute,
+                  letterSpacing: '0.08em',
+                }}>
+                  {deloadRec.level === 'urgent' ? 'URGENT' : deloadRec.level === 'strong' ? 'DELOAD RECOMMENDED' : 'ADVISORY'}
+                </span>
+                <div style={{ fontSize: 12.5, color: T.text, marginTop: 4, lineHeight: 1.5 }}>{deloadRec.message}</div>
+              </div>
+              <span style={{ fontSize: 18, color: T.textMute, cursor: 'pointer', lineHeight: 1, padding: '0 4px' }} onClick={clearDeloadRec}>×</span>
+            </div>
+            {(deloadRec.level === 'strong' || deloadRec.level === 'urgent') && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <span className="tns-mono" style={{ fontSize: 10, color: T.accent, letterSpacing: '0.06em', cursor: 'pointer' }} onClick={() => { generateDeloadBlock(); clearDeloadRec(); }}>ACCEPT DELOAD →</span>
+                <span className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.06em', cursor: 'pointer' }} onClick={clearDeloadRec}>DISMISS</span>
+              </div>
+            )}
+          </div>
+        )}
         {/* Session card */}
         <div style={{ border: `1px solid ${T.line}`, marginBottom: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '14px 16px 10px', borderBottom: `1px solid ${T.lineSoft}` }}>
@@ -163,8 +195,11 @@ export default function Today() {
               <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 32, lineHeight: 1, letterSpacing: '-0.02em' }}>{focus}</div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}>EST · {Math.round(exercises.reduce((sum, ex) => sum + ex.sets * 3.5, 0))} MIN</div>
+              <div className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em' }}>EST · {estimateSessionDuration(exercises)} MIN</div>
               <div className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.08em', marginTop: 3 }}>{exercises.length} EXERCISES</div>
+              {session.durationTrimmed && (
+                <div className="tns-mono" style={{ fontSize: 9, color: T.caution, letterSpacing: '0.06em', marginTop: 3 }}>TRIMMED FOR TIME</div>
+              )}
             </div>
           </div>
           <div style={{ padding: '10px 16px 12px' }}>
@@ -206,6 +241,52 @@ export default function Today() {
               </>
             )}
           </div>
+        </div>
+
+        {/* Volume budget card */}
+        <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Volume budget · this week</div>
+        <div style={{ border: `1px solid ${T.line}`, padding: '12px 16px', marginBottom: 14 }}>
+          {(() => {
+            const weekIndex = (block?.week ?? 1) - 1;
+            const weeklyVol = block?.weeklyMuscleVolume?.[weekIndex] ?? {};
+            const sessionMuscles = new Set<string>();
+            for (const e of exercises) {
+              for (const m of e.primaryMuscles) sessionMuscles.add(m);
+            }
+            const musclesToShow = Array.from(sessionMuscles).filter(m => profile.mevEstimates[m] !== undefined);
+            if (musclesToShow.length === 0) {
+              return <div style={{ fontSize: 11.5, color: T.textDim, textAlign: 'center', padding: '8px 0' }}>No muscle group data for this session</div>;
+            }
+            const recoverySignal = session.rcs ?? 70;
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {musclesToShow.map(mg => {
+                  const mev = profile.mevEstimates[mg] ?? 8;
+                  const mrv = profile.mrvEstimates[mg] ?? 20;
+                  const mav = Math.round((mev + mrv) / 2);
+                  const current = weeklyVol[mg] || 0;
+                  const budget = volumeBudget(mev, mrv, block?.week ?? 1, profile.ttpEstimate || 7, recoverySignal);
+                  const pct = Math.min(100, Math.round((current / budget) * 100));
+                  const barColor = current > mrv ? T.bad : current > mav ? T.caution : T.good;
+                  return (
+                    <div key={mg}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                        <span style={{ fontSize: 11.5, textTransform: 'capitalize' }}>{mg.replace('_', ' ')}</span>
+                        <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, letterSpacing: '0.06em' }}>
+                          {current} / {budget} · MEV {mev} · MRV {mrv}
+                        </span>
+                      </div>
+                      <div style={{ height: 4, background: T.surface, position: 'relative' }}>
+                        <div style={{ position: 'absolute', left: 0, top: 0, height: 4, width: `${pct}%`, background: barColor }} />
+                        <div style={{ position: 'absolute', left: `${Math.min(100, (mev / budget) * 100)}%`, top: -1, width: 1, height: 6, background: T.textMute }} />
+                        <div style={{ position: 'absolute', left: `${Math.min(100, (mrv / budget) * 100)}%`, top: -1, width: 1, height: 6, background: T.bad }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Lift dashboard */}
