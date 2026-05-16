@@ -5,6 +5,10 @@ import { ensembleE1RM, calculateE1RM, getRpePct, calculateSetSFI, expectedLastRe
 import { T, Phone, PrimaryBtn } from '../../shared';
 import type { SetLog } from '../../store';
 
+function makeSetId(): string {
+  return `set-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
 function RPEPad({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const levels = [6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
   return (
@@ -130,7 +134,7 @@ export default function TopSet() {
 
   const handleLogSet = () => {
     const setLog: SetLog = {
-      id: `set-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      id: makeSetId(),
       exerciseId: ex.id,
       setType: 'TOP_SET',
       prescribedLoad,

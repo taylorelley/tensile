@@ -248,8 +248,8 @@ describe('logSet', () => {
     // normalish set; table should be nudged
     useStore.getState().logSet(BID, SID, squatSetLog)
     const newTable = useStore.getState().profile.rpeTable
-    // The relevant cell '3@8.5' should have been nudged slightly
     expect(newTable).toBeDefined()
+    expect(newTable).not.toEqual(initialTable)
   })
 
   it('appends override message on velocity outlier', () => {
