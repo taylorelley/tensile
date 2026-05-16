@@ -9,28 +9,30 @@
 
 Tensile builds a training program in three stable layers that feed each other on a loop.
 
-1. **The profile** — what the app knows about the lifter. Created during onboarding, then continuously refined by every set and every session the lifter logs.
-2. **The algorithms** — a small set of fixed rules that score readiness, estimate strength, measure fatigue, and decide when to push, hold, or deload.
-3. **The block generator** — composes the above into a multi-week training block of concrete sessions, each one a list of exercises with prescribed sets, reps, RPE targets, and loads.
+1. **The profile** — what the app knows about the lifter. Created during onboarding, then continuously refined by every set, every session, and every block the lifter logs. It holds biometrics, goal, equipment, available days, the lifter's personalised RPE-to-percentage table, current and rolling estimated 1RMs, MEV/MRV per muscle group, weak points, HRV baseline, an optional load-velocity profile, and a time-to-peak estimate that updates after each block.
+2. **The algorithms** — a small set of fixed rules that score readiness, estimate strength, measure fatigue, choose accessories, adjust loads, and decide when to push, hold, or deload.
+3. **The block generator** — composes the above into a multi-week training block of concrete sessions. Each session is a list of exercises with prescribed sets, reps, RPE targets, and *bar loads*, and is built to fit the lifter's session-duration cap.
 
-The lifter then trains that block. Every set they log updates the profile, every wellness check updates the readiness model, and the next time a block is generated it draws on all of that new information. The program is not a fixed plan handed down once; it's the steady output of a feedback loop.
+The lifter then trains that block. Every set updates the profile in five ways at once: the lift's e1RM moves, the rolling average moves, the lifter's personal RPE table drifts toward observed performance, the session's per-muscle-group volume accumulates, and the RPE-calibration counter ticks up. At the end of each session the wellness score, session RPE, and training load are stored; at the end of each week a deload score is recomputed; at the end of each block, peak detection refines the time-to-peak estimate and accessory-to-lift correlations are computed.
+
+The program isn't a fixed plan handed down once — it's the steady output of a feedback loop.
 
 ```mermaid
 flowchart LR
   subgraph Inputs
     O[Onboarding answers]
-    H[Training history<br/>sets, sessions, wellness]
+    H[Training history<br/>sets, sessions, wellness, HRV]
   end
 
-  O --> P[Profile<br/>strength, recovery,<br/>schedule, goal]
+  O --> P[Profile<br/>strength, recovery,<br/>schedule, goal,<br/>personalised RPE table,<br/>weak points, TTP, MEV/MRV]
   H --> P
 
-  P --> A[Algorithms<br/>e1RM · SFI · RCS<br/>Volume budget · Deload score]
+  P --> A[Algorithms<br/>e1RM ensemble · SFI · RCS<br/>Volume budget · Deload score<br/>Weak-point selector<br/>Peak/stall · ACLR]
   A --> G[Block generator]
-  G --> B[Training block<br/>weeks of sessions<br/>with loads and RPE]
+  G --> B[Training block<br/>weeks of sessions<br/>with loads, RPE, back-offs<br/>trimmed to duration cap]
 
   B --> T[Lifter trains the block]
-  T -->|logs sets, wellness,<br/>session RPE| H
+  T -->|logs sets, wellness,<br/>sRPE, optional HRV| H
 
   classDef inputs fill:#fff3eb,stroke:#ff6e3a,color:#333;
   classDef brain fill:#fef9e9,stroke:#e8c14e,color:#333;
@@ -42,6 +44,8 @@ flowchart LR
 
 *Diagram 1 — the closed loop. Inputs feed the profile, the profile feeds the algorithms, the algorithms feed the generator, the generated block is trained, and training produces new history that updates the profile.*
 
+All state is stored client-side in IndexedDB (with a localStorage fallback and a one-time migration from older builds), so the app works offline.
+
 ---
 
 ## 2. What the user tells the app (onboarding)
@@ -49,19 +53,21 @@ flowchart LR
 Onboarding is six screens. Each one writes a specific slice of the profile, which is the only thing the generator reads later.
 
 - **Biometrics & goal** — body weight, date of birth, sex, height, training age, primary goal (Powerlifting, Strength, Hypertrophy, General), squat stance, deadlift stance, whether they use a belt, and what they wear on their knees (raw, sleeves, wraps).
+
+  Training age is gated: lifters with less than 6 months under the bar are politely turned away with a notice that Tensile assumes reliable RPE reporting, which true novices can't yet provide. The lifter is invited back when they hit 6 months. Beginners in the 6–12 month band are accepted but flagged for fresh RPE calibration (their starting RPE confidence is treated as untrusted until they've logged 10+ sessions).
 - **Baseline strength** — for squat, bench, and deadlift the lifter enters a recent heavy set as weight × reps × RPE. The app converts these into estimated one-rep maxes using the same ensemble algorithm it will use forever after, so the very first prescribed loads are already in the lifter's actual ballpark.
-- **Weak points** — for each main lift, the lifter picks the failure pattern they want to fix (for example, *out of the hole* on squat, *off the chest* on bench, *off the floor* on deadlift). These are stored for use in block reviews and weak-point reporting.
-- **Recent training history** — what programme they were on most recently (nSuns, Sheiko, 5/3/1, Custom RPE, etc.) and a derived time-to-peak estimate that comes from their training age (a 5+ year lifter peaks in a longer development block than a one-year lifter).
-- **Schedule & equipment** — which days of the week they can train (a 7-toggle grid), how long a session should be (45, 60, 75, 90 minutes), and any exercises they want excluded (injury, no equipment, dislike).
+- **Weak points** — for each main lift, the lifter picks the failure pattern they want to fix (for example, *out of the hole* on squat, *off the chest* on bench, *off the floor* on deadlift). These directly drive the weak-point engine in Section 4, which biases accessory selection toward exercises tagged for that failure pattern.
+- **Recent training history** — what programme they were on most recently (nSuns, Sheiko, 5/3/1, Custom RPE, etc.) and a derived time-to-peak estimate that comes from their training age (a longer-tenured lifter peaks in a longer development block than a one-year lifter).
+- **Schedule & equipment** — which days of the week they can train (a 7-toggle grid), how long a session should be (45, 60, 75, 90 minutes), and any exercises they want excluded (injury, no equipment, dislike). The duration figure is real — the generator trims sets to fit it (see Section 4).
 - **First block preview** — the lifter sees the block the system will generate and locks it in.
 
 ```mermaid
 flowchart LR
-  S1[Biometrics & goal] --> P1[Body, age, sex,<br/>goal, equipment, stance]
-  S2[Baseline strength] --> P2[Starting e1RM<br/>per lift]
+  S1[Biometrics & goal<br/>novice gate at &lt; 6 months] --> P1[Body, age, sex, goal,<br/>equipment, stance,<br/>trainingAgeYears]
+  S2[Baseline strength] --> P2[Starting e1RM per lift<br/>+ rolling e1RM]
   S3[Weak points] --> P3[Failure pattern<br/>per lift]
   S4[Recent training] --> P4[Time-to-peak estimate<br/>+ last programme]
-  S5[Schedule] --> P5[Available days<br/>session length<br/>excluded exercises]
+  S5[Schedule] --> P5[Available days<br/>session duration cap<br/>excluded exercises]
   S6[Preview & lock in] --> G[Generate first block]
 
   P1 & P2 & P3 & P4 & P5 --> Profile[(Profile)]
@@ -75,32 +81,41 @@ flowchart LR
 
 *Diagram 2 — onboarding screens on the left, the profile fields they populate on the right. Locking in at the end triggers the first block generation.*
 
+A separate, optional screen — VBT Calibration — lets a lifter who has a bar-speed sensor enter two or more load + measured-velocity pairs. The app fits a load-velocity regression, stores the slope, intercept, R², and sample size in the profile, and from then on uses the third (velocity-based) estimator in the e1RM ensemble.
+
 ---
 
 ## 3. What the app remembers from training
 
-Once the lifter is training, the app captures four kinds of data, and each one feeds back into the profile:
+Once the lifter is training, the app captures five kinds of data, each of which flows back into the profile.
 
-1. **Pre-session wellness** — five quick sliders (sleep quality, fatigue, soreness, motivation, stress). These produce a Readiness Composite Score for that session.
-2. **Set logs** — for every working set: prescribed load and reps, actual load and reps, the lifter's reported RPE, optionally bar-speed velocity. The app immediately recomputes the lifter's estimated one-rep max for that lift and updates a rolling average. Every set also gets a fatigue score.
-3. **Session totals** — total volume load (weight × reps across every set), total session fatigue, and a session-RPE at the end, which is the lifter's overall sense of how hard the session was.
-4. **Status** — was the session completed, skipped, or partial? Any manual overrides (lower the RPE cap, drop a set, defer the session)?
+1. **Pre-session wellness** — five sliders (sleep quality, fatigue, soreness, motivation, stress) and an optional manual HRV entry (morning rMSSD in ms). These feed the Readiness Composite Score for the session.
+2. **Set logs** — for every working set: prescribed and actual load, prescribed and actual reps, the lifter's reported RPE, optionally bar-speed velocity. Each set immediately:
+   - Recomputes the lift's session-level e1RM via the ensemble.
+   - Folds that into the lifter's rolling e1RM.
+   - Nudges the lifter's *personal* RPE-to-percentage table toward what was actually observed (unless the set was flagged as an outlier — see Section 6.2).
+   - Adds one working set to the session's per-muscle-group volume tally.
+   - Increments the RPE-calibration counter on the profile.
+3. **Session totals** — total volume load (weight × reps across every set), total Session Fatigue Index, and at session end a session-RPE plus an *sRPE training load* (sRPE × estimated session minutes).
+4. **Status & overrides** — was the session completed, skipped, or partial? Every manual adjustment (lower the RPE cap, drop a set, defer, reactive deload) is recorded as a string in the session's `overrides` list. RPE outliers are auto-logged here too.
+5. **Block-level rollups** — at the end of each session, that session's muscle-group set counts are merged into the block's weekly muscle-volume map. A separate `auditLog` on the block records every system decision (week completed, phase changed, etc.) with an evidence tier (`VALIDATED`, `HEURISTIC`, or `SYSTEM`), so coaches can review what the engine did and why.
 
-The profile fields that get continuously updated by this history are:
+The profile fields that get continuously updated by all this are:
 
-- **Current e1RM** per lift (the latest estimate from the most recent heavy single, ensemble-weighted).
-- **Rolling e1RM** per lift (an exponential moving average — recent sessions matter more, old sessions still pull on it).
-- **RPE calibration** — how often the lifter logs RPE and how close their predictions match the algorithm's expectations.
-- **Weekly volume** per muscle group (used against the MEV/MRV budget).
-- **Wellness and fatigue trends** (used for readiness and deload decisions).
+- **Current e1RM** and **rolling e1RM** per lift.
+- **Personalised RPE table** — the lifter's own `{reps}@{rpe} → percentage` map, drifting toward their observed performance; flagged "personalised" once 20+ entries have moved away from the population defaults.
+- **RPE calibration** — total sessions logged, plus mean absolute error of RPE predictions.
+- **HRV history** (last 28 readings) and **28-day baseline** — recomputed every time a real reading is entered.
+- **Time-to-peak estimate** and **TTP history** — refined when a peak is detected at block end.
+- **Accessory responsiveness** — Pearson correlation between an accessory's weekly volume and the parent lift's weekly e1RM, computed when a development block ends and a meaningful correlation (|r| > 0.4) is found across at least six paired weeks.
 
-Nothing here lives on a server — the entire profile and every block lives in browser storage so the app works offline.
+Everything persists to IndexedDB, with localStorage as a redundant backup. There is no server.
 
 ---
 
 ## 4. How a block is built
 
-When the lifter is ready for a new block, the generator runs a single pass that always follows the same five steps.
+When the lifter is ready for a new block, the generator runs a single pass through seven stages.
 
 ```mermaid
 flowchart TD
@@ -108,24 +123,26 @@ flowchart TD
   Start --> S1[Pick the phase<br/>Accumulation / Intensification / Realisation]
   S1 --> S2[Lay out the weeks<br/>align start to Monday<br/>span = time-to-peak]
   S2 --> S3[Fill each available day<br/>Mon/Wed/Fri/Sat focus rotation]
-  S3 --> S4[Apply phase modifiers<br/>RPE / reps / sets adjustments]
-  S4 --> S5[Compute prescribed load<br/>from e1RM × RPE table]
-  S5 --> S6[Attach back-off protocol<br/>load drop sized to phase]
-  S6 --> Out[Block of sessions]
+  S3 --> S4[Apply phase modifiers<br/>RPE / reps / sets on the PRIMARY lift]
+  S4 --> S5[Weak-point swap<br/>replace ASSIST and SUPP slots<br/>with weak-point-targeting picks]
+  S5 --> S6[Compute prescribed loads<br/>e1RM × personal RPE table<br/>round to 2.5 kg]
+  S6 --> S7[Trim to duration cap<br/>drop sets SUPP → CORE → ASSIST<br/>until estimate &lt;= session duration]
+  S7 --> S8[Attach back-off protocol<br/>drop interpolates across the block]
+  S8 --> Out[Block of sessions]
 
   classDef step fill:#fef9e9,stroke:#e8c14e,color:#333;
   classDef io fill:#fff3eb,stroke:#ff6e3a,color:#333;
-  class S1,S2,S3,S4,S5,S6 step;
+  class S1,S2,S3,S4,S5,S6,S7,S8 step;
   class Start,Out io;
 ```
 
-*Diagram 3 — the generator's five-step pass. Every block type uses this same pipeline; the difference between a development block and a deload is in which modifiers get applied at steps 4–6.*
+*Diagram 3 — the generator's seven-step pass. Every block type uses the same pipeline; the difference between a development block and a deload is in which modifiers get applied at steps 4, 5, 7, and 8.*
 
-**Step 1 — pick the phase.** Development blocks cycle through three phases in order: Accumulation (build volume at moderate RPE), Intensification (less volume, heavier loads), Realisation (peaking with the heaviest, fewest, highest-RPE work). The generator keeps a counter of how many blocks the lifter has completed and picks the next phase by stepping through the cycle. Deload, Pivot, and Rest are separate block types with their own modifiers.
+**Step 1 — pick the phase.** Development blocks cycle through three phases in order: Accumulation (build volume at moderate RPE), Intensification (less volume, heavier loads), Realisation (peaking with the heaviest, fewest, highest-RPE work). The generator keeps a counter of how many blocks the lifter has completed and picks the next phase by stepping through the cycle. Deload, Pivot, Rest, and Peaking are separate block types with their own modifiers. If a peaking plan is active (the lifter has set a meet date and started peaking), new development blocks are locked until peaking ends.
 
-**Step 2 — lay out the weeks.** The start date is snapped to the most recent Monday so weekday-tagged sessions land on the right day. The block spans the lifter's time-to-peak estimate (default 6 weeks).
+**Step 2 — lay out the weeks.** The start date is snapped to the most recent Monday so weekday-tagged sessions land on the right day. The block spans the lifter's current time-to-peak estimate (default 6 weeks, but the engine refines this — see 6.6).
 
-**Step 3 — fill each available day.** For every week, for every day flagged as available, the generator picks a focus and fills in the session from a fixed template — see Section 5.
+**Step 3 — fill each available day.** For every week, for every day flagged as available, the generator picks a focus and fills in the session from a fixed weekday template — see Section 5.
 
 **Step 4 — apply phase modifiers.** The PRIMARY lift in each session is adjusted relative to its Accumulation baseline:
 
@@ -135,11 +152,15 @@ flowchart TD
 | Intensification  | **+0.5**        | **−1**        | unchanged     |
 | Realisation      | **+1.0**        | **−1**        | **−1**        |
 
-Accessory and supplemental exercises keep the same prescription across phases; only the heavy main lift moves.
+**Step 5 — weak-point swap.** This is where personalisation really lands. For each focus, the generator looks up the lifter's weak-point answer for that lift and ranks the catalog: any exercise whose `weakPointTargets` matches that failure pattern gets a 1.5× priority bump. The ASSIST slot is replaced with the highest-priority ASSIST candidate; the SUPP slot is replaced with the next pick. The catalog includes dozens of variations for each main lift — paused, board, spoto, deficit, snatch-grip, block-pull, rack-pull, box, heel-elevated, safety-bar, and so on — so a lifter who tags "off the floor" on deadlift will see deficit pulls and good mornings; one who tags "out of the hole" on squat will see paused, box, and heel-elevated squats.
 
-**Step 5 — compute prescribed load.** For each main lift, the generator takes the lifter's current e1RM, looks up the target reps and RPE in the Tuchscherer/Helms RPE-to-percentage table, multiplies, and rounds to the nearest 2.5 kg plate. So a 200 kg e1RM with a target of 3 reps at RPE 8.5 means 200 × 0.85 = 170 kg on the bar.
+The weak-point engine also applies phase modifiers to the swapped accessories: in Intensification their reps drop by 1 and RPE rises by 0.5; in Realisation it's reps −2 and RPE +1.0.
 
-**Step 6 — attach a back-off protocol.** After the top set, the lifter does back-off sets at a fixed reduced load, repeating until their RPE rises to the prescribed RPE target. The drop size depends on the phase: 12% in Accumulation (lots of volume), 7% in Intensification, 3% in Realisation (almost no drop — the goal is heavy practice, not volume).
+**Step 6 — compute prescribed loads.** For each main lift, the generator takes the lifter's current e1RM, looks the target reps and RPE up in the lifter's *personal* RPE-to-percentage table (which starts as the published Tuchscherer/Helms population values but drifts toward observed performance over time), multiplies, and rounds to the nearest 2.5 kg plate. Accessory exercises also get a prescribed load, but as a fixed fraction of the related main lift's percentage (assists at roughly 75% of the primary load, supps at roughly 60–70%).
+
+**Step 7 — trim to fit the session-duration cap.** The generator estimates how long the session will take (15 minutes of warmup plus, for every set, 0.75 minutes of work plus a rest period: 4 minutes if RPE ≥ 8, 2.5 minutes if RPE ≥ 7, 1.75 minutes otherwise). If the estimate exceeds the lifter's chosen session duration, sets are dropped one at a time, starting from SUPP, then CORE, then ASSIST — and the session is flagged as duration-trimmed so the block review can show that the program had to compromise.
+
+**Step 8 — attach a back-off protocol.** After the top set, the lifter does back-off sets at a reduced load, repeating until their RPE rises to the prescribed target. The drop size now depends on both the phase *and the block week*: in Accumulation it interpolates linearly from 10% in week 1 up to 15% in the final week (more dropdown volume as the lifter is moving more weight); in Intensification it goes 5% → 8%; in Realisation it stays a flat 2% (the goal there is heavy practice, not volume).
 
 ---
 
@@ -159,8 +180,8 @@ flowchart TD
   subgraph DayStructure[Each day is structured as:]
     direction LR
     PRI[PRIMARY<br/>heavy main lift]
-    ASS[ASSIST<br/>strength variation]
-    SUP[SUPP<br/>hypertrophy work × 2]
+    ASS[ASSIST<br/>strength variation<br/>weak-point biased]
+    SUP[SUPP<br/>hypertrophy work x 2<br/>weak-point biased]
     COR[CORE]
     PRI --> ASS --> SUP --> COR
   end
@@ -176,9 +197,9 @@ flowchart TD
   class PRI,ASS,SUP,COR tag;
 ```
 
-*Diagram 4 — the four day templates and the shape of each session. Every day reuses the same PRIMARY → ASSIST → SUPP × 2 → CORE structure; only the exercises change.*
+*Diagram 4 — the four day templates and the shape of each session. Every day reuses the same PRIMARY → ASSIST → SUPP × 2 → CORE structure; only the exercises change. The ASSIST and SUPP slots are filled by the base template first, then overwritten by the weak-point swap from step 5 of the generator.*
 
-The exercises chosen for each focus are fixed:
+The base template for each focus (before the weak-point swap):
 
 | Focus            | PRIMARY              | ASSIST              | SUPP                              | CORE  |
 | ---------------- | -------------------- | ------------------- | --------------------------------- | ----- |
@@ -187,20 +208,26 @@ The exercises chosen for each focus are fixed:
 | Deadlift         | Conventional DL      | Front squat         | Barbell row, Leg extension        | Plank |
 | Bench variation  | Close-grip bench     | Incline press       | Lat pulldown, Lateral raise       | Plank |
 
+But once a lifter has filled in their weak points, the ASSIST and SUPP slots get overwritten with weak-point-matched picks from a catalog of roughly 70 exercises tagged with the failure patterns they address. A few examples:
+
+- *Squat, "out of the hole"* → paused squat, box squat, high-bar squat, heel-elevated squat, safety-bar squat.
+- *Bench, "off the chest"* → paused bench, Spoto press.
+- *Deadlift, "off the floor"* → deficit deadlift, snatch-grip deadlift, good morning.
+
 **What the tags mean:**
 
-- **PRIMARY** — the heavy main lift for the day; the only exercise that responds to phase modifiers and the only one whose load is computed from the lifter's e1RM and the RPE table.
-- **ASSIST** — a strength variation of the primary, typically lower load, more controlled, biased to a weak point.
-- **SUPP** — supplemental hypertrophy work, picked to round out muscle groups not fully covered by the primary and assist.
+- **PRIMARY** — the heavy main lift for the day; the only exercise that responds to phase modifiers on RPE/reps/sets, and the only one whose load is computed directly from the lifter's e1RM and the personal RPE table.
+- **ASSIST** — a strength variation of the primary, typically biased to a weak point, with load assigned at roughly 75% of the primary's prescription.
+- **SUPP** — supplemental hypertrophy work, picked to round out muscle groups not fully covered by the primary and assist, also weak-point-biased when relevant.
 - **CORE** — trunk work, almost always plank, always present.
 
-The lifter can exclude individual exercises during onboarding (or anytime in their schedule), and they can add custom exercises through the catalog screen. Those custom exercises feed into the manual block editor but the auto-generator continues to use the fixed template.
+The lifter can exclude individual exercises during onboarding (or anytime later in their schedule), and they can add custom exercises through the catalog screen. Excluded and custom exercises are persisted to the profile.
 
 ---
 
 ## 6. The algorithms, explained
 
-Each algorithm is a small, deterministic rule. There are no opaque models; every decision the app makes can be explained.
+Each algorithm is a small, deterministic rule. There are no opaque models; every decision the app makes can be explained and is logged to the block's audit log.
 
 ### 6.1 Ensemble e1RM — *how strong is the lifter right now?*
 
@@ -209,38 +236,55 @@ Each algorithm is a small, deterministic rule. There are no opaque models; every
 **What it uses:** Three independent estimates from the same set, weighted by how trustworthy each is for that set:
 
 1. **Rep-based** — Epley and Brzycki formulas averaged together. Confident for low-rep, high-RPE sets; weaker for long sets where rep-prediction formulas break down.
-2. **RPE-adjusted** — looks the lifter's reps + RPE combination up in a standard percentage table and divides the load by that percentage. Confidence grows as the lifter logs more sessions and their RPE predictions track closer to reality.
-3. **Velocity-based** (optional) — if a bar-speed device is connected and the lifter has built up enough samples to fit a personal load-velocity profile, this becomes the most precise method.
+2. **RPE-adjusted** — looks the lifter's reps + RPE combination up in their *personal* RPE table (see 6.2) and divides the load by that percentage. Confidence grows with logged sessions and with the lifter's training age:
+   - 20+ sessions and mean RPE error ≤ 0.5 → full confidence.
+   - 10+ sessions → high confidence.
+   - 2+ years training age → moderate confidence (so an experienced lifter is trusted from day one).
+   - Otherwise → low confidence.
+3. **Velocity-based** (optional) — if a bar-speed sensor is connected and the lifter has fitted a load-velocity profile on the VBT Calibration screen, this becomes the most precise method, with confidence scaling up as more calibration points accumulate.
 
-The three estimates are blended by confidence-weighted average. The single-session estimate is then folded into a rolling average using an exponential moving average where the newest session is weighted at 30% — recent performance moves the needle quickly, but a single bad day doesn't wipe out months of progress.
+The three estimates are blended by confidence-weighted average. The single-session estimate is then folded into the rolling e1RM via an exponential moving average where the newest session is weighted at 30% — recent performance moves the needle quickly, but a single bad day doesn't wipe out months of progress.
 
-**What it changes:** Every prescribed top-set load in every future session, until it's updated again.
+**What it changes:** Every prescribed top-set load in every future session.
 
 ### 6.2 RPE-to-percentage table — *how heavy is "3 reps at RPE 8.5"?*
 
-A fixed lookup of standard published values (the Tuchscherer/Helms table) that maps every reasonable reps-at-RPE combination to a percentage of one-rep max. For example, 3 reps at RPE 8.5 is 85% of 1RM; 5 reps at RPE 9 is 82%; 1 rep at RPE 10 is 96%. This is the table used both *forwards* (to prescribe load from a target RPE and reps) and *backwards* (inside the e1RM ensemble).
+Tensile starts each lifter with the published Tuchscherer/Helms population values: for example, 3 reps at RPE 8.5 is 85% of 1RM; 5 reps at RPE 9 is 82%; 1 rep at RPE 10 is 96%.
+
+But the table is not fixed — it personalises. After every logged set, the app:
+
+1. Computes the *observed* percentage as load ÷ session e1RM.
+2. Compares that against the table's expected value for the same reps+RPE.
+3. If the observed value is within 15% of the expected value, the table entry is nudged toward the observed value (exponentially weighted, with the new observation getting 10% weight).
+4. If the observed value is *more* than 15% off, the set is flagged as an **RPE outlier**, not used to update the table, and recorded as an override in the session log — so coaches can see that the lifter either misreported their RPE or had an unusually good or bad day.
+
+Once 20 or more entries have drifted measurably away from the population defaults, the table is marked "personalised" and the lifter sees a badge to that effect.
+
+The same table is used both forwards (to prescribe load from a target RPE and reps in the block generator) and backwards (inside the e1RM ensemble in 6.1).
 
 ### 6.3 Session Fatigue Index — *how costly was that set?*
 
 **What it asks:** How much fatigue did this set contribute to the session?
 
-**What it uses:** The set's RPE (higher RPE means closer to failure, more fatigue), reps (more reps means more total stress), an exercise-specific fatigue coefficient (a heavy squat at the same RPE is harder to recover from than a cable row at the same RPE), and a top-set bonus (top sets cost more than back-offs).
+**What it uses:** The set's RPE (higher RPE means closer to failure, more fatigue), reps (more reps means more total stress), an exercise-specific fatigue coefficient (a heavy squat at the same RPE is harder to recover from than a cable row at the same RPE), and a top-set bonus of 1.2× because top sets cost more than back-offs.
 
-A rough sense of the per-exercise coefficients:
+The exercise fatigue coefficient (EFC) table covers roughly 70 movements grouped by class. A rough sense:
 
-| Movement class               | Coefficient |
-| ---------------------------- | ----------- |
-| Heavy squat / front squat    | 1.40        |
-| Conventional deadlift        | 1.35        |
-| Romanian deadlift            | 1.25        |
-| Overhead press               | 1.00        |
-| Bench press                  | 0.95        |
-| Barbell row                  | 0.85        |
-| Leg press                    | 0.75        |
-| Dumbbell curl                | 0.55        |
-| Leg extension                | 0.50        |
+| Movement class                                       | Coefficient |
+| ---------------------------------------------------- | ----------- |
+| Heavy squat variations (back, front, paused, SSB)    | ~1.40       |
+| Conventional / sumo / trap-bar / deficit deadlift    | ~1.35       |
+| RDL / good morning / snatch-grip / rack pull         | 1.25 – 1.30 |
+| Overhead press                                       | 1.00        |
+| Bench variations (bench, close-grip, incline)        | 0.85 – 0.95 |
+| Rows and pulldowns                                   | 0.85        |
+| Hip thrust / leg press / hack squat                  | 0.75        |
+| Lunges / split squats / single-leg work              | 0.80 – 0.85 |
+| Curls, pushdowns, lateral raises, face pulls         | 0.50 – 0.55 |
+| Leg curl / leg extension / calf raise                | 0.50        |
+| Core (plank, pallof, dead bug)                       | 0.20 – 0.40 |
 
-**What it changes:** The session SFI is the sum across all sets, and over time the SFI trend feeds into deload detection (a sudden spike in fatigue is one of the warning signals).
+**What it changes:** The session SFI is the sum across all sets; the per-week trend feeds both ACLR (6.7) and deload detection (6.8).
 
 ### 6.4 Readiness Composite Score (RCS) — *how prepared is the lifter today?*
 
@@ -256,16 +300,16 @@ A rough sense of the per-exercise coefficients:
 | Motivation      | 0.85   |
 | Stress          | 0.80   |
 
-Their weighted average is normalised to 0–100. Optional HRV data can nudge the score up or down by up to ±10 points (high HRV good, low HRV bad). A creeping rise in session-RPE across the last three sessions — a sign of accumulating fatigue even if the lifter feels okay — pulls the score down by up to 15 points.
+Their weighted average is normalised to 0–100. HRV nudges the score by up to ±15 points down or +10 points up, in proportion to how far the latest reading deviates from the 28-day baseline. If the lifter actually enters an rMSSD reading, that is used; otherwise the engine derives a synthetic estimate from the wellness composite so the score keeps moving even without a sensor. A creeping rise in session-RPE across the last three sessions — a sign of accumulating fatigue even if the lifter feels okay — pulls the score down by up to 15 points.
 
 **What it changes:** The score gets mapped to a band, and each band applies prescribed adjustments to that day's session:
 
-| Band       | RCS    | What changes                                             |
-| ---------- | ------ | -------------------------------------------------------- |
-| Excellent  | ≥ 85   | Top-set load +3%, back-off load +3%                      |
-| Good       | 70–84  | No change                                                |
-| Moderate   | 55–69  | Back-off load −2%                                        |
-| Poor       | 40–54  | Back-off load −5%, RPE cap −1, *consider deload*         |
+| Band       | RCS    | What changes                                              |
+| ---------- | ------ | --------------------------------------------------------- |
+| Excellent  | ≥ 85   | Top-set load +3%, back-off load +3%                       |
+| Good       | 70–84  | No change                                                 |
+| Moderate   | 55–69  | Back-off load −2%                                         |
+| Poor       | 40–54  | Back-off load −5%, RPE cap −1, *consider deload*          |
 | Very poor  | < 40   | Back-off load −10%, RPE cap −1, *defer session if possible* |
 
 ```mermaid
@@ -275,15 +319,15 @@ flowchart LR
   W3[Soreness] --> RCS
   W4[Motivation] --> RCS
   W5[Stress] --> RCS
-  HRV[HRV trend<br/>optional] --> RCS
+  HRV[HRV: manual rMSSD<br/>or synthetic estimate] --> RCS
   RPED[Session-RPE drift<br/>last 3 sessions] -.penalty.-> RCS
 
-  RCS[Readiness Composite Score<br/>0–100] --> B{Band}
-  B -->|≥85| E[Excellent<br/>+3% load]
-  B -->|70–84| G[Good<br/>no change]
-  B -->|55–69| M[Moderate<br/>−2% back-off]
-  B -->|40–54| P[Poor<br/>−5% back-off, −1 RPE,<br/>consider deload]
-  B -->|<40| V[Very poor<br/>−10% back-off, −1 RPE,<br/>defer]
+  RCS[Readiness Composite Score<br/>0-100] --> B{Band}
+  B -->|>= 85| E[Excellent<br/>+3% load]
+  B -->|70-84| G[Good<br/>no change]
+  B -->|55-69| M[Moderate<br/>-2% back-off]
+  B -->|40-54| P[Poor<br/>-5% back-off, -1 RPE,<br/>consider deload]
+  B -->|&lt; 40| V[Very poor<br/>-10% back-off, -1 RPE,<br/>defer]
 
   classDef input fill:#fff3eb,stroke:#ff6e3a,color:#333;
   classDef score fill:#fef9e9,stroke:#e8c14e,color:#333;
@@ -293,25 +337,33 @@ flowchart LR
   class E,G,M,P,V band;
 ```
 
-*Diagram 5 — the readiness pipeline. Five sliders plus optional HRV and a fatigue-drift penalty produce a score, which lands in one of five bands, each of which prescribes a specific load and RPE adjustment for the day.*
+*Diagram 5 — the readiness pipeline. Five sliders plus HRV (real or estimated) and a fatigue-drift penalty produce a score, which lands in one of five bands, each prescribing a specific load and RPE adjustment for the day.*
 
 ### 6.5 Volume budget — *how many working sets per muscle group this week?*
 
 **What it asks:** Given where we are in the block, how many working sets should each muscle group accumulate this week?
 
-**What it uses:** A minimum effective volume (MEV) and maximum recoverable volume (MRV) per muscle group — for example, quads might be MEV 10 / MRV 22 sets per week. The week's target rises linearly from MEV in week 1 to MRV in the final week. If recovery is poor (RCS sustained low) the target shrinks by 10%; if recovery is excellent, it grows by 5% (capped just below MRV).
+**What it uses:** A minimum effective volume (MEV) and maximum recoverable volume (MRV) per muscle group — for example, quads might be MEV 10 / MRV 22 sets per week. The week's target rises linearly from MEV in week 1 to MRV in the final week. If readiness is sustained low the target shrinks by 10%; if it's excellent it grows by 5% (capped just below MRV).
 
-**What it changes:** It doesn't change the generated block directly — the template is fixed — but it shows up in the block review as a green/amber/red bar so the lifter and reviewers can see whether actual volume is tracking the budget.
+**What it changes:** It doesn't change the generated block directly — the template is fixed — but it shows up in the block review as a per-muscle-group bar chart with MEV / MAV / MRV landmarks, fed by the per-session muscle-group tallies that the logging pipeline accumulates into the block's `weeklyMuscleVolume` map.
 
 ### 6.6 Peak and stall detection — *is progress real, or is the lifter cooked?*
 
-**What it asks:** Has the lifter's e1RM trend peaked (gone up, then started declining) or stalled (flatlined for several weeks)?
+**What it asks:** Has the lifter's e1RM trend peaked (gone up, then started declining for two straight weeks) or stalled (flatlined for several weeks)?
 
-**What it uses:** The week-by-week best estimated 1RM across completed sessions in the current block. A peak is declared when the maximum value happened earlier in the block and the last two weeks have declined. A stall is declared after week 3 if the slope across the last three weeks is essentially flat and the lifter hasn't built more than 1% on their starting e1RM.
+**What it uses:** The week-by-week best estimated 1RM across completed sessions in the current block. A peak is declared when the maximum value happened at least two weeks before the end, *both* of the last two weeks are declining, and progress was actually made above the starting value. A stall is declared after week 3 if the slope across the last three weeks is essentially flat and the lifter hasn't built more than 1% above their starting e1RM.
 
-**What it changes:** Both feed into the deload score (see 6.7).
+**What it changes:** Both signals contribute to the deload score (6.8). In addition, when a peak is detected at the *end* of a development block, the week the peak landed on is appended to the lifter's TTP history, and the next time the generator runs it uses an EWMA of past peak weeks (α = 0.4) as the new time-to-peak estimate. So a lifter who consistently peaks at week 5 will, after a few blocks, see Tensile generate 5-week blocks instead of the default 6-week ones.
 
-### 6.7 Deload score — *is it time to back off?*
+### 6.7 ACLR (Acute-Chronic Load Ratio) — *is fatigue spiking?*
+
+**What it asks:** Is recent training load running disproportionately ahead of the lifter's recent baseline?
+
+**What it uses:** The week-over-week ratio of average Session Fatigue Index. ACLR > 1.5 means this week's load is more than 50% above last week's — a known marker for elevated injury risk in the sports-science literature.
+
+**What it changes:** It does not modify the prescription directly, but the block review surfaces an amber warning when any week's ACLR exceeds 1.5, the deload score adds 1 point when the flag is on, and the warning is logged to the block's audit log.
+
+### 6.8 Deload score — *is it time to back off?*
 
 **What it asks:** Should the next block be a development block, or do we need a deload first?
 
@@ -322,13 +374,13 @@ flowchart LR
 | Peak detected                         | 5      | e1RM trend has clearly turned over                     |
 | Joint pain flag                       | 5      | Sustained low soreness response signals an issue       |
 | Stall detected                        | 4      | Strength gains have flatlined for three weeks          |
-| Sustained low wellness                | 4      | Average RCS over the last 7 days is below 60           |
-| Time-to-peak exceeded                 | 4      | Block has run past the lifter's TTP estimate           |
-| RPE drift                             | 3      | Last 3 sessions feel ≥0.3 RPE harder than the first 3  |
-| Low HRV trend                         | 2      | Optional — used if HRV data is being collected         |
-| Acute-to-chronic load ratio elevated  | 1      | Recent fatigue is running >1.5× the earlier baseline   |
+| Sustained low wellness                | 4      | Average RCS over the last 3 sessions is below 60       |
+| Time-to-peak exceeded                 | 4      | Block has run past 1.3× the lifter's TTP estimate      |
+| RPE drift                             | 3      | Last 3 sessions feel ≥ 0.3 RPE harder than the first 3 |
+| Low HRV trend                         | 2      | HRV running below 28-day baseline                      |
+| ACLR elevated                         | 1      | Recent SFI > 1.5× earlier baseline                     |
 
-The weights add up to 28. The total score is mapped to a recommendation tier:
+The weights add up to 28. The score is recalculated automatically at the end of each training week — the moment the last session in the current week is marked complete, the engine inspects e1RM trends, the recent RCS average, and the TTP counter, computes the score, and surfaces a recommendation tier in the app:
 
 | Score    | Tier      | What the app suggests                                                  |
 | -------- | --------- | ---------------------------------------------------------------------- |
@@ -342,19 +394,19 @@ The weights add up to 28. The total score is mapped to a recommendation tier:
 flowchart TD
   P[Peak detected] --> SC[Sum signals]
   ST[Stall detected] --> SC
-  W[Wellness low for 7+ days] --> SC
+  W[Wellness low for 3+ sessions] --> SC
   R[RPE drift > 0.3] --> SC
   H[HRV trend low] --> SC
   A[ACLR > 1.5] --> SC
   J[Joint pain flag] --> SC
   TT[Time-to-peak exceeded] --> SC
 
-  SC[Deload score<br/>0–28] --> T{Tier}
-  T -->|0–2| N[None<br/>→ next development block]
-  T -->|3–4| L[Light<br/>→ advisory only]
-  T -->|5–7| MO[Moderate<br/>→ suggest deload]
-  T -->|8+| SG[Strong<br/>→ insert deload block]
-  J -.override.-> U[Urgent<br/>→ immediate deload]
+  SC[Deload score<br/>0-28] --> T{Tier}
+  T -->|0-2| N[None<br/>next development block]
+  T -->|3-4| L[Light<br/>advisory only]
+  T -->|5-7| MO[Moderate<br/>suggest deload]
+  T -->|8+| SG[Strong<br/>insert deload block]
+  J -.override.-> U[Urgent<br/>immediate deload]
 
   classDef signal fill:#fff3eb,stroke:#ff6e3a,color:#333;
   classDef score fill:#fef9e9,stroke:#e8c14e,color:#333;
@@ -365,6 +417,18 @@ flowchart TD
 ```
 
 *Diagram 6 — the deload decision. Eight signals contribute weighted points to the score; the score lands in a tier; the tier picks the next block type. The joint-pain flag is a hard override that escalates straight to "urgent" no matter what the rest of the signals say.*
+
+### 6.9 Accessory responsiveness — *which accessories are actually moving the needle?*
+
+**What it asks:** Of the assists and supps the lifter has been doing, which are correlated with progress on the main lift?
+
+**What it uses:** At the end of every development block, for each accessory the lifter logged at least six weeks of: the Pearson correlation between that accessory's weekly volume load and the parent lift's weekly best e1RM.
+
+**What it changes:** Any correlation with |r| > 0.4 is stored on the profile. This data isn't yet driving exercise selection automatically, but it shows up in the Weak Point block-review screen so coaches and the lifter can see which accessories appear to be pulling their weight.
+
+### 6.10 Session duration estimator — *will the workout fit in the time the lifter has?*
+
+A small but important rule. The estimator adds 15 minutes for warmup plus, for every set, 0.75 minutes of work plus a rest period scaled to RPE (4 min at RPE 8+, 2.5 min at RPE 7+, 1.75 min otherwise). If the total exceeds the lifter's session-duration cap, the generator drops sets one at a time, starting from the lowest-priority slot (SUPP, then CORE, then ASSIST), and flags the session as `durationTrimmed: true` so the block review can show it.
 
 ---
 
@@ -379,25 +443,29 @@ sequenceDiagram
   participant Profile
 
   L->>App: Open today's session
-  App->>L: Pre-session wellness sliders
-  L->>App: Rates sleep, fatigue, soreness, motivation, stress
-  App->>App: Calculate RCS<br/>and map to band
+  App->>L: Pre-session wellness sliders<br/>+ optional HRV entry
+  L->>App: Rates sleep, fatigue, soreness, motivation, stress<br/>(and rMSSD if measured)
+  App->>App: Calculate RCS, band, load/RPE modifiers
   App->>L: Show readiness brief<br/>("Excellent — +3% on the bar")
   L->>App: Confirm top-set target
   L->>App: Logs top set (load, reps, RPE)
-  App->>Profile: Recompute e1RM and rolling e1RM
-  App->>L: Prescribed back-off load<br/>(phase-sized drop ± readiness adjustment)
+  App->>App: Ensemble e1RM
+  App->>App: Personalise RPE table<br/>(skip outliers)
+  App->>Profile: Update e1RM, rolling e1RM, RPE table,<br/>calibration counter, muscle-group volume
+  App->>L: Prescribed back-off load<br/>(phase-and-week drop ± readiness adjustment)
   loop Back-off sets
     L->>App: Logs back-off (load, reps, RPE)
-    App->>App: Update session SFI and volume load
+    App->>App: Update session SFI, volume load,<br/>muscle-group sets
   end
   L->>App: Logs session-RPE at end
-  App->>Profile: Mark session complete<br/>(stored for next block's algorithms)
+  App->>App: Compute sRPE training load
+  App->>Profile: Mark complete, merge into block weekly muscle volume,<br/>append audit entry
+  App->>App: If week boundary: recompute deload score,<br/>maybe surface a recommendation
 ```
 
-*Diagram 7 — one session, from arriving at the gym to walking out. The pre-session wellness check shifts the prescribed loads before the lifter touches the bar; every logged set updates the profile in place; the session-RPE at the end becomes one of the inputs to next block's deload decision.*
+*Diagram 7 — one session, from arriving at the gym to walking out. The pre-session wellness check shifts the prescribed loads before the lifter touches the bar; every logged set updates the profile in place; the session-RPE at the end becomes one of the inputs to next block's deload decision; and a week boundary triggers an automatic deload-score recompute.*
 
-If the lifter wants to override anything — drop a set, lower the RPE cap, defer the session — the app records the override in the session log so reviewers can see, in the block review, how much of the block was lifted as written versus modified.
+If the lifter wants to override anything — drop a set, lower the RPE cap, defer the session, reactive deload — the override is recorded as a string on the session and surfaces in both the block-readiness review (counts of reductions vs. bumps) and the audit log (full chronological list).
 
 ---
 
@@ -411,33 +479,33 @@ stateDiagram-v2
   FirstBlock --> Accumulation: First development block<br/>is always Accumulation
   Accumulation --> Intensification: Block complete<br/>no strong deload signal
   Intensification --> Realisation: Block complete<br/>no strong deload signal
-  Realisation --> Accumulation: Cycle repeats
+  Realisation --> Accumulation: Cycle repeats<br/>(TTP estimate refined<br/>if peak detected)
 
-  Accumulation --> Deload: Deload score ≥ moderate
-  Intensification --> Deload: Deload score ≥ moderate
-  Realisation --> Deload: Deload score ≥ moderate
+  Accumulation --> Deload: Deload score >= moderate
+  Intensification --> Deload: Deload score >= moderate
+  Realisation --> Deload: Deload score >= moderate
   Deload --> Accumulation: After 1 week
 
   Accumulation --> Pivot: User chooses pivot
   Intensification --> Pivot: User chooses pivot
-  Pivot --> Accumulation: After 2 weeks
+  Pivot --> Accumulation: After 1-3 weeks<br/>(~1/3 of previous block)
 
   Accumulation --> Rest: User chooses full rest
   Rest --> Accumulation: After 1 week
 
-  Accumulation --> Peaking: Meet date set
-  Peaking --> [*]: Meet day
+  Accumulation --> Peaking: Meet date set,<br/>peakingActive = true
+  Peaking --> [*]: Meet day<br/>(development blocks locked<br/>until peaking ends)
 ```
 
-*Diagram 8 — the block lifecycle. Development cycles through three phases. Deload, Pivot, and Rest are detours back to Accumulation. When a meet date is set, the system schedules a Peaking phase ending on meet day.*
+*Diagram 8 — the block lifecycle. Development cycles through three phases. Deload, Pivot, and Rest are detours back to Accumulation. When a meet date is set and peaking begins, development is locked until the meet is over.*
 
 **First block.** Built at the moment the lifter locks in onboarding. Always starts in Accumulation.
 
-**Development cycle.** After a block finishes, the system increments the completed-blocks counter and picks the next phase by stepping through *Accumulation → Intensification → Realisation → Accumulation → ...*. Three blocks make a full mesocycle.
+**Development cycle.** After a block finishes, the system increments the completed-blocks counter and picks the next phase by stepping through *Accumulation → Intensification → Realisation → Accumulation → …*. Three blocks make a full mesocycle. As part of this transition the engine looks at the previous block's e1RM trends — if a peak was detected, the peak week is added to TTP history and the next block is scaled to the lifter's updated time-to-peak estimate.
 
-**Deload block.** One week long. Built by taking what the next development block would have been, keeping only the first seven days, halving the sets on every exercise, and capping the RPE target at 7.0. Used to bleed off fatigue when the deload score crosses the moderate threshold (or immediately when the joint-pain override fires).
+**Deload block.** One week long. Built by taking what the next development block would have been, keeping only the first seven days, halving the sets on every exercise, capping the RPE target at 7.0, and for the PRIMARY lift increasing reps by one (capped at 5) to keep the bar moving with cleaner technique at lighter loads.
 
-**Pivot block.** Two weeks long. Used when the lifter wants to shift focus or break a stall without a full deload. Built by taking the first week of the next development block, capping all RPE targets at 8.0, raising rep minimums to 6, and then duplicating that week to fill weeks one and two.
+**Pivot block.** Variable length — roughly one third of the preceding block's duration, clamped between 1 and 3 weeks. Used when the lifter wants to shift focus or break a stall without a full deload. Competition lifts (back squat, bench, conventional deadlift, close-grip bench) are swapped for variation movements (paused squat, paused bench, deficit deadlift, incline press); RPE is capped at 8.0; rep minimums rise to 6. The first week's template is then duplicated forward to fill the pivot duration.
 
 **Rest block.** One week of nothing. No sessions. Used when the lifter is sick, travelling, or just needs a complete break.
 
@@ -445,10 +513,10 @@ stateDiagram-v2
 
 - **3 days before meet day:** Taper starts (very light openers and singles).
 - **3 weeks before meet day:** Realisation starts (the last two weeks of heavy single-digit-rep work, then the taper).
-- **2–3 weeks earlier still:** Pivot starts.
-- **Earlier than that:** Development starts. The pivot length is roughly one third of the lifter's time-to-peak estimate, clamped between 1 and 3 weeks.
+- **2–3 weeks earlier still:** Pivot starts (pivot length scales to roughly one third of the lifter's TTP).
+- **Earlier than that:** Development starts.
 
-The system also reports whether the timeline is feasible (i.e. whether there is enough time between today and meet day to fit a full peak); if not, it flags the schedule and asks the lifter to either move the meet or accept a compressed plan.
+The system also reports whether the timeline is feasible; if not, it flags the schedule and asks the lifter to either move the meet or accept a compressed plan. While peaking is active, development block generation is locked — the lifter follows the peaking timeline through to meet day.
 
 ---
 
@@ -456,11 +524,15 @@ The system also reports whether the timeline is feasible (i.e. whether there is 
 
 Pulling it all together — every logged set is also an input to the next block.
 
-- A heavy top set logged today → the **ensemble e1RM** updates → the **rolling e1RM** drifts in the direction of recent performance → the next top set's prescribed load reflects the change.
-- A streak of weeks where the e1RM trend rises, peaks, then falls → **peak detection** fires → the **deload score** rises → the next block branches to a deload instead of pushing into the next development phase.
-- A run of sessions where the lifter rates them progressively harder → **session-RPE drift** is detected → the **RCS** for the next session takes a penalty → that session's prescribed back-off load drops → and the drift signal also contributes points to the **deload score**.
+- A heavy top set logged today → the **ensemble e1RM** updates → the **rolling e1RM** drifts in the direction of recent performance → the next top-set prescribed load reflects the change. The same set also nudges the lifter's **personal RPE table** toward the observed load-to-1RM ratio (unless it was an outlier), so prescribed loads sharpen over time.
+- A streak of weeks where the e1RM trend rises, peaks, then declines for two straight weeks → **peak detection** fires → at block end, the peak week joins the **TTP history**, the lifter's time-to-peak estimate is refined via EWMA, and the *next* generated block uses the new duration.
+- A run of sessions where the lifter rates them progressively harder → **session-RPE drift** is detected → the **RCS** for the next session takes a penalty → that session's prescribed back-off load drops → and the drift also contributes points to the **deload score**.
 - A run of days where wellness scores stay low → **sustained low wellness** flag → contributes to the deload score and lowers the volume budget for that week.
-- Weekly working-set counts per muscle group → tracked against the **volume budget** (MEV→MRV interpolation) → if the lifter is undershooting MEV or pushing past MRV, the block review surfaces it.
+- A week where the SFI runs more than 50% above last week's → **ACLR alarm** → an amber warning in the block review and one more point to the deload score.
+- Weekly working-set counts per muscle group → tracked against the **volume budget** (MEV → MRV interpolation, adjusted for recovery) → over- and under-shoots are visible in the block review.
+- At the end of every development block, every accessory's weekly volume is correlated with the main lift's weekly e1RM → **accessory responsiveness** scores get stored on the profile, so coaches can see which assists are pulling weight.
+- A manual rMSSD entry → goes into the **HRV history**, the 28-day baseline is recomputed, the next session's RCS uses the real reading rather than the synthetic estimate.
+- A logged set that is far outside the expected RPE band → **RPE outlier** → the table isn't updated this time, and a string is appended to the session's overrides so coaches see what happened.
 
 Every algorithm in Section 6 reads from the profile or session history and writes back into it. Nothing is "fire and forget" — the program the lifter sees next week is a literal function of what they did this week.
 
@@ -475,36 +547,46 @@ Every algorithm in Section 6 reads from the profile or session history and write
 | **RPE**   | Rate of Perceived Exertion (6–10 scale). RPE 10 = absolute failure; RPE 8 = 2 reps left in reserve.  |
 | **RIR**   | Reps in Reserve. RPE 8 ≈ 2 RIR.                                                                      |
 | **sRPE**  | Session-RPE — overall hardness rating of the whole session (0–10), reported after the last set.      |
-| **TTP**   | Time-to-Peak — how many weeks the lifter takes to peak in a development block.                       |
+| **sRPE load** | Training load for the session — sRPE × estimated session minutes.                                 |
+| **TTP**   | Time-to-Peak — how many weeks the lifter takes to peak in a development block. Refined block by block. |
 | **MEV**   | Minimum Effective Volume — fewest weekly working sets per muscle group that still drives gains.      |
 | **MRV**   | Maximum Recoverable Volume — most weekly sets a muscle group can take and still recover.             |
+| **MAV**   | Maximum Adaptive Volume — the midpoint between MEV and MRV; the rough target for most weeks.         |
 | **RCS**   | Readiness Composite Score (0–100) — daily readiness used to adjust the session.                      |
 | **SFI**   | Session Fatigue Index — running total of fatigue cost across all sets in a session.                  |
 | **EFC**   | Exercise Fatigue Coefficient — per-exercise multiplier inside the SFI calculation.                   |
-| **ACLR**  | Acute-to-Chronic Load Ratio — recent fatigue load divided by longer-term fatigue load.               |
-| **HRV**   | Heart Rate Variability — autonomic recovery signal; optional input to the RCS.                       |
+| **ACLR**  | Acute-to-Chronic Load Ratio — recent fatigue load divided by longer-term fatigue load. >1.5 is a warning. |
+| **HRV / rMSSD** | Heart Rate Variability, measured as root mean square of successive differences (in milliseconds). |
+| **VBT**   | Velocity-Based Training — using bar speed to estimate proximity to failure and 1RM.                  |
+| **Weak-point target** | A tag on a catalog exercise saying which lift and which failure pattern it addresses (e.g. paused squat → squat / out_of_hole). |
 
 ---
 
 ## Appendix — Where this lives in the code
 
-For engineers who want to look at the implementation, every section above maps to specific files. Tensile is a TypeScript + React app under `tensile-app/`. State lives in a single Zustand store and is persisted to browser localStorage; there is no backend.
+For engineers who want to look at the implementation, every section above maps to specific files. Tensile is a TypeScript + React app under `tensile-app/`. State lives in a single Zustand store and is persisted to IndexedDB (with a localStorage fallback and one-time migration); there is no backend.
 
 | Doc section                              | Source file(s)                                                                                                                                  |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Profile shape (§2, §3)                   | `tensile-app/src/store.ts` — `UserProfile`                                                                                                      |
-| Onboarding screens (§2)                  | `tensile-app/src/screens/onboarding/` (Welcome, Biometrics, Baselines, WeakPoint, History, Schedule, FirstBlock)                                |
-| Per-session logging (§3, §7)             | `tensile-app/src/screens/session/` (Wellness, ReadinessBrief, TopSet, DropProtocol, Summary) + `logSet` / `completeSession` in `store.ts`       |
-| Block generator pipeline (§4)            | `tensile-app/src/store.ts` — `generateBlock`, `generateFirstBlock`, `generateNextDevelopmentBlock`, `generateDeloadBlock`, `generatePivotBlock` |
-| Weekly day templates (§5)                | `tensile-app/src/store.ts` — `createDayPlan`                                                                                                    |
-| Exercise catalog (§5)                    | `tensile-app/src/exerciseCatalog.ts`                                                                                                            |
+| Persistence (§1, §3)                     | `tensile-app/src/idbStorage.ts` — IndexedDB adapter with localStorage fallback and migration                                                    |
+| Onboarding screens (§2)                  | `tensile-app/src/screens/onboarding/` (Welcome, Biometrics — incl. novice gate, Baselines, WeakPoint, History, Schedule, FirstBlock)             |
+| VBT calibration (§2, §6.1)               | `tensile-app/src/screens/session/VbtCalibration.tsx` — linear regression of load on velocity, stored as `profile.lvProfile`                     |
+| Per-session logging (§3, §7)             | `tensile-app/src/screens/session/` (Wellness with manual HRV, ReadinessBrief, TopSet, DropProtocol, Summary) + `logSet` / `completeSession` in `store.ts` |
+| Block generator pipeline (§4)            | `tensile-app/src/store.ts` — `generateBlock`, `generateFirstBlock`, `generateNextDevelopmentBlock`, `generateDeloadBlock`, `generatePivotBlock`, `generateRestBlock` |
+| Weekly day templates and weak-point swap (§5) | `tensile-app/src/store.ts` — `createDayPlan`; `tensile-app/src/engine.ts` — `getAccessoryTemplate`                                          |
+| Exercise catalog (§5)                    | `tensile-app/src/exerciseCatalog.ts` — ~70 builtins with `primaryMuscles`, `efc`, and `weakPointTargets`                                        |
 | Ensemble e1RM (§6.1)                     | `tensile-app/src/engine.ts` — `calculateE1RM`, `ensembleE1RM`                                                                                    |
-| RPE → % table (§6.2)                     | `tensile-app/src/engine.ts` — `DEFAULT_RPE_TABLE`, `getRpePct`                                                                                    |
-| Session Fatigue Index (§6.3)             | `tensile-app/src/engine.ts` — `calculateSetSFI`, `calculateSessionSFI`                                                                          |
-| Readiness Composite Score (§6.4, §7)     | `tensile-app/src/engine.ts` — `calculateRCS`, `rcsBand`                                                                                          |
-| Volume budget (§6.5)                     | `tensile-app/src/engine.ts` — `volumeBudget`; visualised in `screens/block/Volume.tsx`                                                          |
-| Peak / stall detection (§6.6)            | `tensile-app/src/engine.ts` — `detectPeak`, `detectStall`                                                                                        |
-| Deload score (§6.7)                      | `tensile-app/src/engine.ts` — `calculateDeloadScore`, `deloadRecommendation`; signal computation in `screens/deload/DeloadRec.tsx`              |
-| Phase modifiers and back-off drops (§4)  | `tensile-app/src/store.ts` — `createDayPlan` (RPE/reps/sets); `tensile-app/src/engine.ts` — `getBackOffDrop`                                     |
-| Peaking timeline (§8)                    | `tensile-app/src/engine.ts` — `generatePeakingPlan`; UI in `screens/meet/Peaking.tsx`                                                            |
+| Personalised RPE table (§6.2)            | `tensile-app/src/engine.ts` — `DEFAULT_RPE_TABLE`, `getRpePct`, `personalizeRpeTable`, `isRpeOutlier`                                            |
+| Session Fatigue Index (§6.3)             | `tensile-app/src/engine.ts` — `calculateSetSFI`, `calculateSessionSFI`, `DEFAULT_EFC` (~70 entries)                                              |
+| Readiness Composite Score (§6.4, §7)     | `tensile-app/src/engine.ts` — `calculateRCS`, `rcsBand`; UI in `screens/session/Wellness.tsx` and `screens/block/Readiness.tsx`                  |
+| Volume budget and muscle-group tracking (§6.5) | `tensile-app/src/engine.ts` — `volumeBudget`; `weeklyMuscleVolume` aggregation in `store.ts`; visualised in `screens/block/Volume.tsx`     |
+| Peak / stall detection and TTP refinement (§6.6) | `tensile-app/src/engine.ts` — `detectPeak`, `detectStall`; TTP EWMA update in `generateNextDevelopmentBlock`                              |
+| ACLR (§6.7)                              | `tensile-app/src/screens/block/Volume.tsx` — `computeWeeklyAclr`                                                                                 |
+| Deload score (§6.8)                      | `tensile-app/src/engine.ts` — `calculateDeloadScore`, `deloadRecommendation`; week-end auto-eval in `completeSession`; UI in `screens/deload/DeloadRec.tsx` |
+| Accessory responsiveness (§6.9)          | `tensile-app/src/engine.ts` — `pearsonCorrelation`; block-end computation in `generateNextDevelopmentBlock`                                     |
+| Session duration estimator (§6.10)       | `tensile-app/src/engine.ts` — `estimateSessionDuration`; cap enforcement in `createDayPlan`                                                     |
+| Phase modifiers and back-off drops (§4)  | `tensile-app/src/store.ts` — `createDayPlan` (PRIMARY RPE/reps/sets); `tensile-app/src/engine.ts` — `getBackOffDrop` (phase + block-week interpolation) |
+| Peaking timeline (§8)                    | `tensile-app/src/engine.ts` — `generatePeakingPlan`; UI in `screens/meet/Peaking.tsx`; `profile.peakingActive` locks development                  |
 | Block lifecycle (§8)                     | `tensile-app/src/store.ts` — block generator wrappers; `screens/block/NextBlock.tsx` triggers the transition                                     |
+| Audit log (§3, §6, §7)                   | `tensile-app/src/store.ts` — `Block.auditLog` populated by `completeSession` and block wrappers; UI in `screens/block/Audit.tsx`                |
