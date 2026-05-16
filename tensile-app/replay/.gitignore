@@ -1,0 +1,4 @@
+out/
+fixtures/recorded/*.json
+!fixtures/recorded/.gitkeep
+!fixtures/recorded/sample.json

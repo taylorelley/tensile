@@ -91,6 +91,7 @@ export default function Biometrics() {
   const [height, setHeight] = useState(profile.height ?? 0);
   const [trainingAge, setTrainingAge] = useState(profile.trainingAge);
   const [primaryGoal, setPrimaryGoal] = useState(profile.primaryGoal);
+  const [programmingMode, setProgrammingMode] = useState<'PHASE' | 'TTP'>(profile.programmingMode ?? 'PHASE');
   const [squatStance, setSquatStance] = useState(profile.squatStance);
   const [deadliftStance, setDeadliftStance] = useState(profile.deadliftStance);
   const [belt, setBelt] = useState(profile.belt);
@@ -122,6 +123,8 @@ export default function Biometrics() {
       trainingAge,
       trainingAgeYears,
       primaryGoal,
+      programmingMode,
+      programmingModeChangedAt: programmingMode !== profile.programmingMode ? new Date().toISOString() : profile.programmingModeChangedAt,
       squatStance,
       deadliftStance,
       belt,
@@ -165,12 +168,43 @@ export default function Biometrics() {
 
       <div className="tns-eyebrow" style={{ marginTop: 18, marginBottom: 10 }}>Primary goal</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        {primaryGoals.map(g => (
-          <div key={g} onClick={() => setPrimaryGoal(g)} style={{
-            border: `1px solid ${primaryGoal === g ? T.accent : T.line}`,
-            background: primaryGoal === g ? 'rgba(255,110,58,0.06)' : 'transparent',
-            padding: '12px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', textAlign: 'center',
-          }}>{g}</div>
+        {primaryGoals.map(g => {
+          // P1.4.4: only Powerlifting/Strength generators are fully wired.
+          // Hypertrophy/General will branch a different template family but
+          // until they ship, surface them as coming soon so the UX promise
+          // matches behaviour. They remain selectable so existing users keep
+          // their data; selection just nudges them with a hint.
+          const supported = g === 'Powerlifting' || g === 'Strength';
+          return (
+            <div key={g} onClick={() => setPrimaryGoal(g)} style={{
+              border: `1px solid ${primaryGoal === g ? T.accent : T.line}`,
+              background: primaryGoal === g ? 'rgba(255,110,58,0.06)' : 'transparent',
+              padding: '12px 14px', cursor: 'pointer', textAlign: 'center',
+              opacity: supported ? 1 : 0.6,
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>{g}</div>
+              {!supported && (
+                <div style={{ fontSize: 9, color: T.textDim, marginTop: 3 }}>Coming soon — runs strength templates for now</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="tns-eyebrow" style={{ marginTop: 18, marginBottom: 10 }}>Programming mode</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        {([
+          { id: 'PHASE', label: 'Traditional phases', sub: 'Accumulation → Intensification → Realisation. Stimulus changes shape every few weeks.' },
+          { id: 'TTP', label: 'Bottom-up TTP', sub: 'Constant microcycle. Loads rise as your e1RM does. Block ends when you stop progressing.' },
+        ] as const).map(opt => (
+          <div key={opt.id} onClick={() => setProgrammingMode(opt.id)} style={{
+            border: `1px solid ${programmingMode === opt.id ? T.accent : T.line}`,
+            background: programmingMode === opt.id ? 'rgba(255,110,58,0.06)' : 'transparent',
+            padding: '12px 14px', cursor: 'pointer',
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{opt.label}</div>
+            <div style={{ fontSize: 11, color: T.textDim, lineHeight: 1.45 }}>{opt.sub}</div>
+          </div>
         ))}
       </div>
 

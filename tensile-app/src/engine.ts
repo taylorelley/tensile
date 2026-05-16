@@ -1,5 +1,93 @@
 // Core Forge engine algorithms per PRD §6
 
+// ── Tunable constants ──────────────────────────────────────────────────────
+// All numeric thresholds that gate engine behaviour are hoisted here so the
+// replay/backtesting harness can sweep them without monkey-patching call sites.
+// Production code reads `getConstants()`; tests call `setConstants()` before a
+// run and `resetConstants()` after.
+export interface EngineConstants {
+  /** Rolling e1RM EMA weight on the newest session (engine §6.1). */
+  e1rmAlpha: number;
+  /** RPE-table EWMA weight per logged set (engine §6.1 personalisation). */
+  rpeAlpha: number;
+  /** Fixed-bound fraction used as fallback when MAD has too few obs. */
+  rpeOutlierBand: number;
+  /** Modified-Z (Iglewicz–Hoaglin) threshold for per-cell outlier detection. */
+  rpeOutlierZ: number;
+  /** Minimum observations per (reps,rpe) cell before MAD-based detection kicks in. */
+  rpeOutlierMinObs: number;
+  /** Rolling window length for per-cell MAD observations. */
+  rpeOutlierWindow: number;
+  /** Structural minimum declining weeks before a peak is declared. */
+  peakDeclineWeeks: number;
+  /** Magnitude gate multiplier on per-lifter weekly e1RM residual SD. */
+  peakNoiseMultiplier: number;
+  /** Deload signal weights (kept in named map for clarity in the harness). */
+  deloadWeights: {
+    peak: number; stall: number; wellness: number; rpeDrift: number;
+    hrv: number; aclr: number; jointPain: number; ttp: number;
+  };
+  /** Deload tier cutoffs on the (clustered) score. */
+  deloadTiers: { strong: number; moderate: number; light: number };
+  /** ACLR (acute:chronic) amber threshold. */
+  aclrThreshold: number;
+  /** Minimum paired-weeks before accessory correlation is stored. */
+  accessoryMinN: number;
+  /** Spearman ρ magnitude required to record an accessory as responsive. */
+  accessoryR: number;
+  /** Paired-n needed to drop the exploratory badge in the UI. */
+  accessoryConfidentN: number;
+  /** Weak-point selection priority multiplier. */
+  weakPointMultiplier: number;
+  /** Per-exercise VBT e1RM bias correction (kg subtracted). */
+  vbtBias: Record<string, number>;
+  /** Minimum lvProfile.n + R² required before VBT contributes to the ensemble. */
+  vbtMinN: number;
+  vbtMinR2: number;
+  /** Block boundary minimum for hypertrophy responsiveness signal placeholder. */
+  hypertrophyMinSets: number;
+  /** When age >= this value the engine applies age-scaling defaults (P3.6.3). */
+  ageScalingFrom: number;
+}
+
+export const DEFAULT_CONSTANTS: EngineConstants = {
+  e1rmAlpha: 0.12,
+  rpeAlpha: 0.10,
+  rpeOutlierBand: 0.15,
+  rpeOutlierZ: 3.5,
+  rpeOutlierMinObs: 5,
+  rpeOutlierWindow: 20,
+  peakDeclineWeeks: 2,
+  peakNoiseMultiplier: 1.0,
+  deloadWeights: {
+    peak: 5, stall: 4, wellness: 4, rpeDrift: 3,
+    hrv: 2, aclr: 1, jointPain: 5, ttp: 4,
+  },
+  deloadTiers: { strong: 8, moderate: 5, light: 3 },
+  aclrThreshold: 1.5,
+  accessoryMinN: 12,
+  accessoryR: 0.4,
+  accessoryConfidentN: 20,
+  weakPointMultiplier: 1.5,
+  vbtBias: {
+    conventional_deadlift: 2.5,
+    sumo_deadlift: 2.5,
+    hip_thrust: 3.0,
+  },
+  vbtMinN: 5,
+  vbtMinR2: 0.9,
+  hypertrophyMinSets: 10,
+  ageScalingFrom: 40,
+};
+
+let CONSTANTS: EngineConstants = { ...DEFAULT_CONSTANTS };
+
+export function getConstants(): EngineConstants { return CONSTANTS; }
+export function setConstants(c: Partial<EngineConstants>): void {
+  CONSTANTS = { ...DEFAULT_CONSTANTS, ...CONSTANTS, ...c };
+}
+export function resetConstants(): void { CONSTANTS = { ...DEFAULT_CONSTANTS }; }
+
 export interface SetInput {
   load: number;
   reps: number;
@@ -13,6 +101,10 @@ export interface LvProfile {
   slope: number;
   intercept: number;
   n: number;
+  /** Coefficient of determination from the calibration fit (P1.4.5). */
+  rSquared?: number;
+  /** Equipment used during calibration; prescription requires a match. */
+  equipment?: { straps: boolean; belt: boolean; sleeves: boolean; wraps: boolean };
 }
 
 export type LiftKey = 'squat' | 'bench' | 'deadlift';
@@ -46,7 +138,7 @@ export function calculateE1RM(
   set: SetInput,
   userRpeTable: Record<string, number>,
   userCalibration: { sessions: number; mae: number; trainingAgeYears?: number },
-  lvProfile?: { slope: number; intercept: number; n: number }
+  lvProfile?: { slope: number; intercept: number; n: number; rSquared?: number }
 ): { repE1RM: number; repConfidence: number; rpeE1RM: number; rpeConfidence: number; vbtE1RM?: number; vbtConfidence?: number } {
   // Method 1: Rep-based (Epley/Brzycki)
   const epley = set.load * (1 + set.reps / 30);
@@ -69,12 +161,15 @@ export function calculateE1RM(
   else if (userCalibration.sessions >= 10) rpeConfidence = 0.7;
   else if ((userCalibration.trainingAgeYears ?? 0) >= 2) rpeConfidence = 0.5;
 
-  // Method 3: VBT
+  // Method 3: VBT — gated by per-exercise sample-size and R² thresholds (P1.4.5).
   let vbtE1RM: number | undefined;
   let vbtConfidence: number | undefined;
-  if (set.velocity !== undefined && lvProfile && lvProfile.n >= 10) {
+  const { vbtMinN, vbtMinR2 } = getConstants();
+  const r2 = lvProfile?.rSquared;
+  const vbtGate = lvProfile && lvProfile.n >= vbtMinN && (r2 === undefined || r2 >= vbtMinR2);
+  if (set.velocity !== undefined && lvProfile && vbtGate) {
     vbtE1RM = set.load / (lvProfile.slope * set.velocity + lvProfile.intercept);
-    vbtConfidence = Math.min(1.2, 0.8 + (lvProfile.n - 10) * 0.02);
+    vbtConfidence = Math.min(1.2, 0.8 + Math.max(0, lvProfile.n - 10) * 0.02);
   }
 
   return { repE1RM, repConfidence, rpeE1RM, rpeConfidence, vbtE1RM, vbtConfidence };
@@ -85,11 +180,20 @@ export function ensembleE1RM(
   userRpeTable: Record<string, number>,
   userCalibration: { sessions: number; mae: number },
   previousRolling: number,
-  alpha = 0.3,
-  lvProfile?: { slope: number; intercept: number; n: number }
+  alpha: number = getConstants().e1rmAlpha,
+  lvProfile?: { slope: number; intercept: number; n: number },
+  exerciseId?: string
 ): e1RMResult {
-  const { repE1RM, repConfidence, rpeE1RM, rpeConfidence, vbtE1RM, vbtConfidence } =
+  const { repE1RM, repConfidence, rpeE1RM, rpeConfidence, vbtE1RM: rawVbtE1RM, vbtConfidence: rawVbtConfidence } =
     calculateE1RM(set, userRpeTable, userCalibration, lvProfile);
+
+  // VBT bias correction per exercise (P1.4.5).
+  let vbtE1RM = rawVbtE1RM;
+  const vbtConfidence = rawVbtConfidence;
+  if (vbtE1RM !== undefined && exerciseId) {
+    const bias = getConstants().vbtBias[exerciseId];
+    if (bias) vbtE1RM = Math.max(0, vbtE1RM - bias);
+  }
 
   let totalWeight = repConfidence + rpeConfidence;
   let weightedSum = repE1RM * repConfidence + rpeE1RM * rpeConfidence;
@@ -235,6 +339,9 @@ export interface WellnessInputs {
   motivation: number; // 1-10
   stress: number; // 1-10 (inverted: 10 = none)
   hrvRmssd?: number; // optional manual HRV entry (ms)
+  /** P2.5.2: optional joint-pain slider (1 = none, 10 = severe). When >= 7
+   *  the deload trigger escalates to urgent regardless of other signals. */
+  jointPain?: number;
 }
 
 export function calculateRCS(
@@ -243,7 +350,8 @@ export function calculateRCS(
   hrv28DayBaseline?: number,
   rpeDrift3Sessions = 0
 ): number {
-  // Use real HRV if provided in wellness, otherwise fall back to synthetic estimate
+  // P0.3.1: HRV only contributes when a real reading exists. No synthetic
+  // estimate is derived from the wellness composite to avoid double-counting.
   const effectiveHrv7Day = wellness.hrvRmssd !== undefined ? wellness.hrvRmssd : hrv7DayRolling;
   const wqRaw = (
     wellness.sleepQuality * 1.20 +
@@ -289,19 +397,45 @@ export function volumeBudget(
 }
 
 // §6.6 Development Block & TTP Detection
+/** Estimate the per-lifter weekly e1RM residual SD by detrending with a simple
+ *  linear fit (least-squares) over the supplied trend and returning the SD of
+ *  residuals. Returns 0 if the trend is too short to fit. Exported for the
+ *  replay harness and audit-log inspection. */
+export function weeklyE1rmResidualSd(e1rmTrend: number[]): number {
+  const n = e1rmTrend.length;
+  if (n < 4) return 0;
+  const xs = e1rmTrend.map((_, i) => i);
+  const meanX = xs.reduce((a, b) => a + b, 0) / n;
+  const meanY = e1rmTrend.reduce((a, b) => a + b, 0) / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) {
+    num += (xs[i] - meanX) * (e1rmTrend[i] - meanY);
+    den += (xs[i] - meanX) ** 2;
+  }
+  const slope = den === 0 ? 0 : num / den;
+  const intercept = meanY - slope * meanX;
+  const residSq = e1rmTrend.reduce((sum, y, i) => sum + (y - (slope * i + intercept)) ** 2, 0);
+  return Math.sqrt(residSq / (n - 1));
+}
+
 export function detectPeak(e1rmTrend: number[], minimumTTP: number, blockWeek: number): boolean {
-  if (blockWeek < minimumTTP || e1rmTrend.length < 3) return false;
+  const { peakDeclineWeeks, peakNoiseMultiplier } = getConstants();
+  // Need at least one prior point beyond the declining tail and the structural
+  // minimum number of declining weeks.
+  if (blockWeek < minimumTTP || e1rmTrend.length < peakDeclineWeeks + 1) return false;
   const n = e1rmTrend.length;
   const maxVal = Math.max(...e1rmTrend);
   const maxIdx = e1rmTrend.lastIndexOf(maxVal);
-  // Detect peak after 2 consecutive declining weeks: max is not in the last position,
-  // the last 2 values are declining, and progress was made above the starting value.
-  return (
-    maxIdx < n - 2 &&
-    e1rmTrend[n - 1] < e1rmTrend[n - 2] &&
-    e1rmTrend[n - 2] < e1rmTrend[n - 3] &&
-    maxVal > e1rmTrend[0]
-  );
+  if (maxIdx >= n - peakDeclineWeeks) return false;
+  // Structural rule: peakDeclineWeeks consecutive decreases at the tail.
+  for (let i = n - peakDeclineWeeks; i < n; i++) {
+    if (e1rmTrend[i] >= e1rmTrend[i - 1]) return false;
+  }
+  if (maxVal <= e1rmTrend[0]) return false;
+  // P0.3.3 noise gate: decline magnitude must exceed the per-lifter residual SD.
+  const sd = weeklyE1rmResidualSd(e1rmTrend);
+  if (sd > 0 && maxVal - e1rmTrend[n - 1] < peakNoiseMultiplier * sd) return false;
+  return true;
 }
 
 export function detectStall(e1rmTrend: number[], blockWeek: number): boolean {
@@ -434,24 +568,32 @@ export interface DeloadSignals {
   ttpExceeded: boolean;
 }
 
+/** Cluster-max deload score (P1.4.1). Performance, recovery, and load signals
+ *  are aggregated as max-within-cluster, then summed across clusters. This
+ *  prevents the system from double-counting one underlying overreach state
+ *  while still letting a genuinely independent signal trigger action. */
 export function calculateDeloadScore(signals: DeloadSignals): number {
-  let score = 0;
-  if (signals.peakDetected) score += 5;
-  if (signals.stallDetected) score += 4;
-  if (signals.wellnessSustainedLow) score += 4;
-  if (signals.rpeDrift) score += 3;
-  if (signals.hrvTrendLow) score += 2;
-  if (signals.aclrFlag) score += 1;
-  if (signals.jointPainFlag) score += 5;
-  if (signals.ttpExceeded) score += 4;
-  return score;
+  const w = getConstants().deloadWeights;
+  const performance = Math.max(
+    signals.peakDetected ? w.peak : 0,
+    signals.stallDetected ? w.stall : 0,
+    signals.rpeDrift ? w.rpeDrift : 0,
+    signals.ttpExceeded ? w.ttp : 0,
+  );
+  const recovery = Math.max(
+    signals.wellnessSustainedLow ? w.wellness : 0,
+    signals.hrvTrendLow ? w.hrv : 0,
+  );
+  const load = signals.aclrFlag ? w.aclr : 0;
+  return performance + recovery + load;
 }
 
 export function deloadRecommendation(score: number, signals: DeloadSignals): { level: string; message: string } {
+  const { strong, moderate, light } = getConstants().deloadTiers;
   if (signals.jointPainFlag) return { level: 'urgent', message: 'Immediate deload recommended. Consider consulting a physiotherapist.' };
-  if (score >= 8) return { level: 'strong', message: 'Strong deload recommendation based on multiple fatigue signals.' };
-  if (score >= 5) return { level: 'moderate', message: 'Moderate deload suggestion — monitor recovery closely.' };
-  if (score >= 3) return { level: 'light', message: 'Light advisory — noted in block review.' };
+  if (score >= strong) return { level: 'strong', message: 'Strong deload recommendation based on multiple fatigue signals.' };
+  if (score >= moderate) return { level: 'moderate', message: 'Moderate deload suggestion — monitor recovery closely.' };
+  if (score >= light) return { level: 'light', message: 'Light advisory — noted in block review.' };
   return { level: 'none', message: 'No deload action required.' };
 }
 
@@ -520,28 +662,155 @@ export function getRpePct(reps: number, rpe: number, userTable?: Record<string, 
   return DEFAULT_RPE_TABLE[key] || 0.80;
 }
 
-/** Update user's RPE table from observed performance. EWMA with α=0.1 toward observed %1RM.
- *  Returns the updated table and a flag indicating if it's now personalised. */
+// RPE table grid (column order matches DEFAULT_RPE_TABLE rows above).
+const RPE_TABLE_REPS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const RPE_TABLE_RPES = [7, 7.5, 8, 8.5, 9, 9.5, 10];
+
+/** Weighted Pool-Adjacent-Violators along an axis. Returns the projection that
+ *  is the L2-optimal monotone fit. When `nonIncreasing` is true the output is
+ *  non-increasing in index; false yields non-decreasing. */
+function pavProject(values: number[], weights: number[], nonIncreasing: boolean): number[] {
+  const n = values.length;
+  if (n === 0) return [];
+  const sign = nonIncreasing ? -1 : 1;
+  // Transform so we always solve non-decreasing isotonic regression.
+  const v = values.map((x) => x * sign);
+  type Block = { sum: number; w: number; start: number; end: number };
+  const blocks: Block[] = [];
+  for (let i = 0; i < n; i++) {
+    blocks.push({ sum: v[i] * weights[i], w: weights[i], start: i, end: i });
+    while (blocks.length >= 2) {
+      const top = blocks[blocks.length - 1];
+      const prev = blocks[blocks.length - 2];
+      if (prev.sum / prev.w <= top.sum / top.w) break;
+      prev.sum += top.sum;
+      prev.w += top.w;
+      prev.end = top.end;
+      blocks.pop();
+    }
+  }
+  const out: number[] = new Array(n);
+  for (const blk of blocks) {
+    const mean = blk.sum / blk.w;
+    for (let i = blk.start; i <= blk.end; i++) out[i] = mean;
+  }
+  return out.map((x) => x * sign);
+}
+
+/** Project a 10×7 RPE table onto the monotone cone:
+ *   - non-increasing in reps (more reps → lower %)
+ *   - non-decreasing in rpe  (higher rpe → higher %)
+ *  Cyclic PAV with weights from per-cell observation counts. Converges in a
+ *  handful of passes; capped at 8 iterations to keep cost bounded. */
+export function projectMonotoneRpeTable(
+  table: Record<string, number>,
+  cellCounts: Record<string, number> = {},
+): Record<string, number> {
+  const R = RPE_TABLE_REPS.length;
+  const C = RPE_TABLE_RPES.length;
+  const M: number[][] = [];
+  const W: number[][] = [];
+  for (let r = 0; r < R; r++) {
+    const row: number[] = [];
+    const wrow: number[] = [];
+    for (let c = 0; c < C; c++) {
+      const key = `${RPE_TABLE_REPS[r]}@${RPE_TABLE_RPES[c]}`;
+      row.push(table[key] ?? DEFAULT_RPE_TABLE[key] ?? 0.8);
+      wrow.push(Math.max(1, cellCounts[key] ?? 1));
+    }
+    M.push(row);
+    W.push(wrow);
+  }
+  for (let iter = 0; iter < 8; iter++) {
+    let maxDelta = 0;
+    // Pass 1: rows — non-decreasing in rpe (column index).
+    for (let r = 0; r < R; r++) {
+      const projected = pavProject(M[r], W[r], false);
+      for (let c = 0; c < C; c++) {
+        maxDelta = Math.max(maxDelta, Math.abs(projected[c] - M[r][c]));
+        M[r][c] = projected[c];
+      }
+    }
+    // Pass 2: columns — non-increasing in reps (row index).
+    for (let c = 0; c < C; c++) {
+      const colVals = M.map((row) => row[c]);
+      const colW = W.map((row) => row[c]);
+      const projected = pavProject(colVals, colW, true);
+      for (let r = 0; r < R; r++) {
+        maxDelta = Math.max(maxDelta, Math.abs(projected[r] - M[r][c]));
+        M[r][c] = projected[r];
+      }
+    }
+    if (maxDelta < 1e-4) break;
+  }
+  const out: Record<string, number> = { ...table };
+  for (let r = 0; r < R; r++) {
+    for (let c = 0; c < C; c++) {
+      const key = `${RPE_TABLE_REPS[r]}@${RPE_TABLE_RPES[c]}`;
+      out[key] = Math.round(M[r][c] * 1000) / 1000;
+    }
+  }
+  return out;
+}
+
+export interface RpeTableMeta {
+  updatedAt: string;
+  cellCounts: Record<string, number>;
+  isMonotone: boolean;
+  /** Rolling samples per (reps,rpe) cell, used for robust outlier detection. */
+  observations?: Record<string, number[]>;
+}
+
+/** Update user's RPE table from observed performance. Combines:
+ *   - per-cell EWMA toward observed %1RM (α from constants, optionally
+ *     attenuated by an outlier trust weight)
+ *   - 2-D isotonic projection so the table remains monotone in (reps, rpe)
+ *  Returns the updated table, meta (counts + observations), and a flag
+ *  indicating whether the table is now personalised. */
 export function personalizeRpeTable(
   currentTable: Record<string, number>,
   load: number,
   reps: number,
   rpe: number,
-  e1rmSession: number
-): { table: Record<string, number>; isPersonalised: boolean } {
-  if (e1rmSession <= 0 || load <= 0) return { table: currentTable, isPersonalised: false };
+  e1rmSession: number,
+  meta?: RpeTableMeta,
+  trustWeight: number = 1,
+): { table: Record<string, number>; isPersonalised: boolean; meta: RpeTableMeta } {
+  const nextMeta: RpeTableMeta = meta
+    ? {
+        ...meta,
+        cellCounts: { ...meta.cellCounts },
+        observations: { ...(meta.observations || {}) },
+      }
+    : { updatedAt: new Date().toISOString(), cellCounts: {}, isMonotone: true, observations: {} };
+
+  if (e1rmSession <= 0 || load <= 0) {
+    return { table: currentTable, isPersonalised: false, meta: nextMeta };
+  }
   const observedPct = load / e1rmSession;
   const key = `${reps}@${rpe}`;
   const currentPct = currentTable[key] ?? DEFAULT_RPE_TABLE[key] ?? 0.80;
-  const alpha = 0.1;
+  const alpha = getConstants().rpeAlpha * Math.max(0, Math.min(1, trustWeight));
   const updatedPct = currentPct * (1 - alpha) + observedPct * alpha;
-  const updatedTable = { ...currentTable, [key]: Math.round(updatedPct * 1000) / 1000 };
-  // Consider personalised after 4+ weeks of data (proxy: ≥20 keys have deviated from default)
-  const personalisedKeys = Object.keys(updatedTable).filter(k => {
+  const candidateTable: Record<string, number> = {
+    ...currentTable,
+    [key]: Math.round(updatedPct * 1000) / 1000,
+  };
+  nextMeta.cellCounts[key] = (nextMeta.cellCounts[key] || 0) + 1;
+  const obsForCell = nextMeta.observations![key] || [];
+  obsForCell.push(observedPct);
+  if (obsForCell.length > getConstants().rpeOutlierWindow) obsForCell.shift();
+  nextMeta.observations![key] = obsForCell;
+
+  const projected = projectMonotoneRpeTable(candidateTable, nextMeta.cellCounts);
+  nextMeta.updatedAt = new Date().toISOString();
+  nextMeta.isMonotone = true;
+
+  const personalisedKeys = Object.keys(projected).filter((k) => {
     const defaultVal = DEFAULT_RPE_TABLE[k];
-    return defaultVal !== undefined && Math.abs(updatedTable[k] - defaultVal) > 0.005;
+    return defaultVal !== undefined && Math.abs(projected[k] - defaultVal) > 0.005;
   });
-  return { table: updatedTable, isPersonalised: personalisedKeys.length >= 20 };
+  return { table: projected, isPersonalised: personalisedKeys.length >= 20, meta: nextMeta };
 }
 
 /** Expected last-rep velocity (m/s) for a given prescribed RPE/reps combo, derived from
@@ -564,11 +833,51 @@ export function expectedLastRepVelocity(
 /** Outlier reason categorisation — useful for UI messaging and audit. */
 export type RpeOutlierReason = 'none' | 'load' | 'velocity' | 'both';
 
+/** Per-cell modified Z-score (Iglewicz–Hoaglin) using MAD of recent
+ *  observations. Falls back to a fixed-bound deviation when fewer than
+ *  `rpeOutlierMinObs` observations exist for the cell. Returns a numeric
+ *  z-magnitude (≥0); callers compare against `rpeOutlierZ` for binary outlier
+ *  classification, or use it directly as a continuous trust signal. */
+export function rpeCellModifiedZ(
+  observedPct: number,
+  expectedPct: number,
+  cellObservations: number[] = [],
+): number {
+  const { rpeOutlierMinObs, rpeOutlierBand } = getConstants();
+  if (cellObservations.length < rpeOutlierMinObs) {
+    // Cell is sparse: fall back to fixed-bound deviation normalised to z.
+    const dev = Math.abs(observedPct - expectedPct) / Math.max(expectedPct, 1e-6);
+    return (dev / rpeOutlierBand) * getConstants().rpeOutlierZ;
+  }
+  const sorted = [...cellObservations].sort((a, b) => a - b);
+  const median = sorted.length % 2 === 1
+    ? sorted[(sorted.length - 1) / 2]
+    : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+  const deviations = sorted.map((x) => Math.abs(x - median));
+  deviations.sort((a, b) => a - b);
+  const mad = deviations.length % 2 === 1
+    ? deviations[(deviations.length - 1) / 2]
+    : (deviations[deviations.length / 2 - 1] + deviations[deviations.length / 2]) / 2;
+  if (mad === 0) return 0;
+  // 0.6745 is the constant that makes MAD a consistent estimator of σ under normality.
+  return Math.abs(0.6745 * (observedPct - median) / mad);
+}
+
+/** Trust weight in [0,1] derived from the cell's modified-Z. Used by
+ *  `personalizeRpeTable` to attenuate updates from surprising observations. */
+export function rpeTrustWeight(z: number): number {
+  const { rpeOutlierZ } = getConstants();
+  return Math.max(0, Math.min(1, 1 - z / rpeOutlierZ));
+}
+
 /** Check if a logged set is an RPE outlier. Combines two independent signals:
- *   1) Load deviation — observed %1RM deviates >15% from the expected %1RM for stated rpe/reps.
- *   2) LRV deviation — when last-rep velocity and a calibrated lvProfile (n≥10) are available,
- *      compare against the velocity expected for the stated RPE; >15% disagrees with reported effort.
- *  Returns the failing category (or 'none'); call sites should treat any non-'none' as an outlier. */
+ *   1) Load deviation — observed %1RM is improbable for this (reps, rpe) given
+ *      the lifter's history (modified-Z ≥ threshold), with a fallback band
+ *      when the cell has too few observations.
+ *   2) LRV deviation — when last-rep velocity and a calibrated lvProfile are
+ *      available, the observed velocity disagrees with the expected velocity
+ *      for the stated RPE by more than the fixed band.
+ *  Returns the failing category (or 'none'). */
 export function detectRpeOutlier(
   load: number,
   reps: number,
@@ -576,19 +885,24 @@ export function detectRpeOutlier(
   e1rmSession: number,
   userTable: Record<string, number>,
   lastRepVelocity?: number,
-  lvProfile?: LvProfile
+  lvProfile?: LvProfile,
+  cellObservations?: number[],
 ): RpeOutlierReason {
   if (e1rmSession <= 0 || load <= 0) return 'none';
   const observedPct = load / e1rmSession;
   const key = `${reps}@${rpe}`;
   const expectedPct = userTable[key] ?? DEFAULT_RPE_TABLE[key] ?? 0.80;
-  const loadFail = Math.abs(observedPct - expectedPct) / expectedPct > 0.15;
+  const z = rpeCellModifiedZ(observedPct, expectedPct, cellObservations ?? []);
+  const loadFail = z >= getConstants().rpeOutlierZ;
 
   let lrvFail = false;
-  if (lastRepVelocity !== undefined && lastRepVelocity > 0 && lvProfile && lvProfile.n >= 10) {
+  const { vbtMinN, vbtMinR2, rpeOutlierBand } = getConstants();
+  const r2 = lvProfile?.rSquared;
+  const lrvGate = lvProfile && lvProfile.n >= vbtMinN && (r2 === undefined || r2 >= vbtMinR2);
+  if (lastRepVelocity !== undefined && lastRepVelocity > 0 && lvProfile && lrvGate) {
     const expectedV = expectedLastRepVelocity(reps, rpe, userTable, lvProfile);
     if (expectedV > 0) {
-      lrvFail = Math.abs(lastRepVelocity - expectedV) / expectedV > 0.15;
+      lrvFail = Math.abs(lastRepVelocity - expectedV) / expectedV > rpeOutlierBand;
     }
   }
 
@@ -606,9 +920,10 @@ export function isRpeOutlier(
   e1rmSession: number,
   userTable: Record<string, number>,
   lastRepVelocity?: number,
-  lvProfile?: LvProfile
+  lvProfile?: LvProfile,
+  cellObservations?: number[],
 ): boolean {
-  return detectRpeOutlier(load, reps, rpe, e1rmSession, userTable, lastRepVelocity, lvProfile) !== 'none';
+  return detectRpeOutlier(load, reps, rpe, e1rmSession, userTable, lastRepVelocity, lvProfile, cellObservations) !== 'none';
 }
 
 /** Estimate session duration in minutes (PRD §7.2.3) */
@@ -626,32 +941,45 @@ export function estimateSessionDuration(exercises: { sets: number; reps: number;
   return Math.round(warmupTime + workingTime);
 }
 
+export type ProgrammingMode = 'PHASE' | 'TTP';
+
 /** Weak-point accessory template selector (PRD §4.9, §6.7).
  *  Bias selection toward exercises that target the user's weak point for a given primary lift.
- *  Returns a list of candidate exercises with priority scores. */
+ *  Returns a list of candidate exercises with priority scores.
+ *  In `programmingMode === 'TTP'` phase modifiers are zeroed — the microcycle
+ *  stays constant across a block and load progression comes entirely from
+ *  rising e1RM via the calling generator. */
 export function getAccessoryTemplate(
   primaryLift: string,
   blockPhase: string,
   weakPoints: Record<string, string>,
-  catalog: { id: string; name: string; tag: string; defaultSets: number; defaultReps: number; defaultRpe: number; weakPointTargets?: { liftId: string; position: string }[]; primaryMuscles: string[] }[]
+  catalog: { id: string; name: string; tag: string; defaultSets: number; defaultReps: number; defaultRpe: number; weakPointTargets?: { liftId: string; position: string }[]; primaryMuscles: string[] }[],
+  programmingMode: ProgrammingMode = 'PHASE',
+  weakPointStreak: Record<string, number> = {},
 ): { id: string; name: string; tag: string; sets: number; reps: number; rpeTarget: number; primaryMuscles: string[]; priority: number }[] {
   const weakPoint = weakPoints[primaryLift];
+  const baseMult = getConstants().weakPointMultiplier;
+  // P2.5.3: escalate the weak-point multiplier when the same weak point has
+  // persisted across consecutive blocks without measurable improvement.
+  const streak = weakPointStreak[`${primaryLift}:${weakPoint}`] ?? 0;
+  const escalatedMult = streak >= 2 ? Math.min(baseMult + 0.5, 2.5) : baseMult;
   const candidates = catalog
     .filter(ex => ex.tag !== 'PRIMARY' && ex.tag !== 'CORE')
     .map(ex => {
       const targetsWeakPoint = ex.weakPointTargets?.some(
         wpt => wpt.liftId === primaryLift && wpt.position === weakPoint
       );
-      const priority = targetsWeakPoint ? 1.5 : 1.0;
-      // Phase modifiers
+      const priority = targetsWeakPoint ? escalatedMult : 1.0;
       let reps = ex.defaultReps;
       let rpe = ex.defaultRpe;
-      if (blockPhase === 'REALISATION') {
-        reps = Math.max(1, reps - 2);
-        rpe = Math.min(10, rpe + 1.0);
-      } else if (blockPhase === 'INTENSIFICATION') {
-        reps = Math.max(1, reps - 1);
-        rpe = Math.min(10, rpe + 0.5);
+      if (programmingMode === 'PHASE') {
+        if (blockPhase === 'REALISATION') {
+          reps = Math.max(1, reps - 2);
+          rpe = Math.min(10, rpe + 1.0);
+        } else if (blockPhase === 'INTENSIFICATION') {
+          reps = Math.max(1, reps - 1);
+          rpe = Math.min(10, rpe + 0.5);
+        }
       }
       return {
         id: ex.id,
@@ -664,7 +992,6 @@ export function getAccessoryTemplate(
         priority,
       };
     });
-  // Sort by priority descending, then shuffle within same priority for variety
   candidates.sort((a, b) => b.priority - a.priority);
   return candidates;
 }
@@ -683,6 +1010,97 @@ export function pearsonCorrelation(x: number[], y: number[]): number {
   return (n * sumXY - sumX * sumY) / denom;
 }
 
+/** Fractional ranks with tie-averaging. */
+function rankArray(values: number[]): number[] {
+  const indexed = values.map((v, i) => ({ v, i }));
+  indexed.sort((a, b) => a.v - b.v);
+  const ranks = new Array(values.length).fill(0);
+  let i = 0;
+  while (i < indexed.length) {
+    let j = i;
+    while (j + 1 < indexed.length && indexed[j + 1].v === indexed[i].v) j++;
+    const avg = (i + j) / 2 + 1;
+    for (let k = i; k <= j; k++) ranks[indexed[k].i] = avg;
+    i = j + 1;
+  }
+  return ranks;
+}
+
+/** Spearman rank correlation — robust to outliers and monotone (not linear)
+ *  relationships. Used by the accessory-responsiveness pipeline (P1.4.2). */
+export function spearmanCorrelation(x: number[], y: number[]): number {
+  if (x.length !== y.length || x.length < 2) return 0;
+  return pearsonCorrelation(rankArray(x), rankArray(y));
+}
+
+/** Partial Spearman correlation of x and y controlling for a list of confound
+ *  variables. Each variable is rank-transformed, then we regress x and y on
+ *  the controls (least squares) and correlate the residuals. */
+export function partialSpearman(x: number[], y: number[], controls: number[][]): number {
+  const n = x.length;
+  if (n < 4 || y.length !== n || controls.some(c => c.length !== n)) return 0;
+  const rx = rankArray(x);
+  const ry = rankArray(y);
+  const rcs = controls.map(rankArray);
+
+  // Build design matrix [1, c1, c2, ...] and solve normal equations for both rx and ry.
+  const k = rcs.length + 1; // intercept + controls
+  const X: number[][] = rx.map((_, i) => [1, ...rcs.map(c => c[i])]);
+
+  function solveOLS(target: number[]): number[] {
+    // beta = (X^T X)^-1 X^T y, solved via Gaussian elimination on (k+1)×(k+2) augmented.
+    const A: number[][] = Array.from({ length: k }, () => new Array(k + 1).fill(0));
+    for (let i = 0; i < n; i++) {
+      for (let a = 0; a < k; a++) {
+        for (let b = 0; b < k; b++) A[a][b] += X[i][a] * X[i][b];
+        A[a][k] += X[i][a] * target[i];
+      }
+    }
+    for (let p = 0; p < k; p++) {
+      // Partial pivoting
+      let maxRow = p;
+      for (let r = p + 1; r < k; r++) if (Math.abs(A[r][p]) > Math.abs(A[maxRow][p])) maxRow = r;
+      [A[p], A[maxRow]] = [A[maxRow], A[p]];
+      if (Math.abs(A[p][p]) < 1e-12) return new Array(k).fill(0);
+      for (let r = p + 1; r < k; r++) {
+        const factor = A[r][p] / A[p][p];
+        for (let c = p; c <= k; c++) A[r][c] -= factor * A[p][c];
+      }
+    }
+    const beta = new Array(k).fill(0);
+    for (let p = k - 1; p >= 0; p--) {
+      let sum = A[p][k];
+      for (let c = p + 1; c < k; c++) sum -= A[p][c] * beta[c];
+      beta[p] = sum / A[p][p];
+    }
+    return beta;
+  }
+
+  const betaX = solveOLS(rx);
+  const betaY = solveOLS(ry);
+  const residX: number[] = [];
+  const residY: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const fittedX = betaX.reduce((s, b, j) => s + b * X[i][j], 0);
+    const fittedY = betaY.reduce((s, b, j) => s + b * X[i][j], 0);
+    residX.push(rx[i] - fittedX);
+    residY.push(ry[i] - fittedY);
+  }
+  return pearsonCorrelation(residX, residY);
+}
+
+/** Linearly interpolate within-phase RPE add across the weeks of a phase
+ *  (P2.5.7). PHASE mode only — TTP mode keeps modifiers at 0. */
+export function withinPhaseRpeAdd(phase: string, blockWeek: number, totalBlockWeeks: number): number {
+  const t = totalBlockWeeks > 1 ? Math.min(1, Math.max(0, (blockWeek - 1) / (totalBlockWeeks - 1))) : 0;
+  switch (phase) {
+    case 'ACCUMULATION': return 0;
+    case 'INTENSIFICATION': return 0 + (0.5 - 0) * t;
+    case 'REALISATION': return 0.5 + (1.0 - 0.5) * t;
+    default: return 0;
+  }
+}
+
 export function getBackOffDrop(phase: string, blockWeek = 1, totalBlockWeeks = 6): number {
   const t = totalBlockWeeks > 1 ? (blockWeek - 1) / (totalBlockWeeks - 1) : 0;
   switch (phase) {
@@ -691,4 +1109,31 @@ export function getBackOffDrop(phase: string, blockWeek = 1, totalBlockWeeks = 6
     case 'REALISATION': return 0.02; // minimal back-off, preserve CNS freshness
     default: return 0.12;
   }
+}
+
+/** Hypertrophy load helper (P1.4.4). RIR (reps-in-reserve) ≈ 10 − RPE,
+ *  so we reuse the RPE table at the implied RPE. Falls back to a Brzycki-like
+ *  curve when the cell is missing. Returns a bar load rounded to 2.5 kg. */
+export function getRirLoad(rir: number, reps: number, e1rm: number, userTable: Record<string, number>): number {
+  if (e1rm <= 0) return 0;
+  const rpe = Math.max(7, Math.min(10, 10 - rir));
+  const key = `${reps}@${rpe}`;
+  const pct = userTable[key] ?? DEFAULT_RPE_TABLE[key] ?? Math.max(0.5, 1 / (1.0278 - 0.0278 * Math.min(reps, 30)));
+  return Math.round((e1rm * pct) / 2.5) * 2.5;
+}
+
+/** Coefficient of variation of an HRV series (rolling window). P2.5.6. */
+export function hrvCoefficientOfVariation(samples: number[]): number {
+  if (samples.length < 4) return 0;
+  const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
+  if (mean === 0) return 0;
+  const variance = samples.reduce((s, x) => s + (x - mean) ** 2, 0) / (samples.length - 1);
+  return Math.sqrt(variance) / mean;
+}
+
+/** Age-scaled adjustments (P3.6.3). Returns multipliers on key thresholds. */
+export function ageScaling(age: number): { e1rmAlphaMult: number; aclrThresholdMult: number; intensificationDelta: number } {
+  if (age < getConstants().ageScalingFrom) return { e1rmAlphaMult: 1, aclrThresholdMult: 1, intensificationDelta: 0 };
+  // Halve EMA α, lower ACLR amber threshold to 1.35/1.5 = 0.9, ease intensification by 0.5 RPE.
+  return { e1rmAlphaMult: 0.5, aclrThresholdMult: 0.9, intensificationDelta: -0.5 };
 }

@@ -1,0 +1,11 @@
+{
+  "fixtureId": "linearGain",
+  "golden": {
+    "rpePredictionMAE": 0.006632480200473782,
+    "e1rmSmoothness": 8.480423324200168e-32,
+    "overrideFrequency": 0,
+    "falsePeakRate": 0,
+    "durationTrimIncidence": 0
+  },
+  "ranAt": "2026-05-16T12:00:39.409Z"
+}
