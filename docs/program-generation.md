@@ -122,9 +122,9 @@ flowchart TD
   Start[Trigger<br/>first block · next block · deload · pivot · rest]
   Start --> S1[Pick the phase<br/>Accumulation / Intensification / Realisation]
   S1 --> S2[Lay out the weeks<br/>align start to Monday<br/>span = time-to-peak]
-  S2 --> S3[Fill each available day<br/>Mon/Wed/Fri/Sat focus rotation]
+  S2 --> S3[Assign primary lifts to days<br/>exhaustive permutation search<br/>≥ 48 h squat–deadlift gap enforced]
   S3 --> S4[Apply phase modifiers<br/>RPE / reps / sets on the PRIMARY lift]
-  S4 --> S5[Weak-point swap<br/>replace ASSIST and SUPP slots<br/>with weak-point-targeting picks]
+  S4 --> S5[Greedy accessory selection<br/>scored by muscle deficit · readiness<br/>push/pull balance · weak-point weight]
   S5 --> S6[Compute prescribed loads<br/>e1RM × personal RPE table<br/>round to 2.5 kg]
   S6 --> S7[Trim to duration cap<br/>drop sets SUPP → CORE → ASSIST<br/>until estimate &lt;= session duration]
   S7 --> S8[Attach back-off protocol<br/>drop interpolates across the block]
@@ -142,7 +142,7 @@ flowchart TD
 
 **Step 2 — lay out the weeks.** The start date is snapped to the most recent Monday so weekday-tagged sessions land on the right day. The block spans the lifter's current time-to-peak estimate (default 6 weeks, but the engine refines this — see 6.6).
 
-**Step 3 — fill each available day.** For every week, for every day flagged as available, the generator picks a focus and fills in the session from a fixed weekday template — see Section 5.
+**Step 3 — assign primary lifts to days.** For every week, the engine runs an exhaustive permutation search over the lifter's available days and every valid assignment of squat, bench, and deadlift to those days. A hard constraint rules out any assignment where squat and deadlift fall within 48 hours of each other. Among valid assignments, the search scores each option: a squat–deadlift gap in the 48–96-hour sweet spot earns a bonus, sessions that alternate upper and lower body earn a bonus, and bench days spaced too close together lose a point. The highest-scoring valid assignment is used. If fewer than three days are available, one or more primary lifts are assigned `null` (that day becomes accessory-only or GPP). With that lift-to-day assignment fixed, `buildProgrammaticSession` fills each day — see Section 5.
 
 **Step 4 — apply phase modifiers.** The PRIMARY lift in each session is adjusted relative to its Accumulation baseline:
 
@@ -152,76 +152,80 @@ flowchart TD
 | Intensification  | **+0.5**        | **−1**        | unchanged     |
 | Realisation      | **+1.0**        | **−1**        | **−1**        |
 
-**Step 5 — weak-point swap.** This is where personalisation really lands. For each focus, the generator looks up the lifter's weak-point answer for that lift and ranks the catalog: any exercise whose `weakPointTargets` matches that failure pattern gets a 1.5× priority bump. The ASSIST slot is replaced with the highest-priority ASSIST candidate; the SUPP slot is replaced with the next pick. The catalog includes dozens of variations for each main lift — paused, board, spoto, deficit, snatch-grip, block-pull, rack-pull, box, heel-elevated, safety-bar, and so on — so a lifter who tags "off the floor" on deadlift will see deficit pulls and good mornings; one who tags "out of the hole" on squat will see paused, box, and heel-elevated squats.
+**Step 5 — greedy accessory selection.** After the PRIMARY lift is placed, the engine scores every exercise in the catalog (except PRIMARY and CORE tag exercises) against the session context and greedily adds exercises one by one until either the SFI budget or the duration cap is exhausted.
 
-The weak-point engine also applies phase modifiers to the swapped accessories: in Intensification their reps drop by 1 and RPE rises by 0.5; in Realisation it's reps −2 and RPE +1.0.
+The score for each candidate is a product of several factors:
+
+1. **Muscle deficit** — the sum of positive deficits (`weeklyTarget − setsSoFar`) for the exercise's primary muscles. Exercises that address the muscles most behind on their weekly MEV/MRV target score highest.
+2. **Muscle readiness** — each muscle group's recovery state is estimated with exponential fatigue decay: `readiness = 1 − exp(−hoursSince/halfLife) × min(1, fatigueLoad/10)`. The half-life is chosen from the exercise's EFC (≥ 1.25 → 60 h, ≥ 0.70 → 48 h, else → 36 h), and is reduced by up to 20% for experienced lifters who recover faster. Any exercise whose primary muscle has readiness below 0.4 is hard-excluded for that session.
+3. **Push/pull balance** — the engine tracks a `pushPullTargetRatio` (default 1:1) across each session. If the session's push:pull ratio is already more than 1.5× the target and the candidate is a push exercise, its score is halved; if the ratio is less than 0.67× and the candidate is a pull, the score gets a 30% bonus.
+4. **Weak-point priority** — exercises whose `weakPointTargets` match the lifter's declared failure pattern keep the same 1.5× priority factor as before; highly persistent weak points can push this up to 2.5×.
+5. **Accessory responsiveness** — if the lifter has a stored Spearman correlation above 0.4 for this exercise (from a prior block), the score is multiplied by `1 + ρ`.
+
+Two guarantees are enforced after scoring: at least one CORE exercise is always added, and if the session contains at least one push exercise but no pull exercise, the highest-scored pull is force-added regardless of budget. There are no longer fixed ASSIST/SUPP slots — exercises are simply added in score order until the session is full.
+
+The WeekContext threads the accumulated sets per muscle group and movement-pattern counts forward from the first session of the week to the last, so Monday's volume is visible when Tuesday's exercises are scored, and so on.
 
 **Step 6 — compute prescribed loads.** For each main lift, the generator takes the lifter's current e1RM, looks the target reps and RPE up in the lifter's *personal* RPE-to-percentage table (which starts as the published Tuchscherer/Helms population values but drifts toward observed performance over time), multiplies, and rounds to the nearest 2.5 kg plate. Accessory exercises also get a prescribed load, but as a fixed fraction of the related main lift's percentage (assists at roughly 75% of the primary load, supps at roughly 60–70%).
 
-**Step 7 — trim to fit the session-duration cap.** The generator estimates how long the session will take (15 minutes of warmup plus, for every set, 0.75 minutes of work plus a rest period: 4 minutes if RPE ≥ 8, 2.5 minutes if RPE ≥ 7, 1.75 minutes otherwise). If the estimate exceeds the lifter's chosen session duration, sets are dropped one at a time, starting from SUPP, then CORE, then ASSIST — and the session is flagged as duration-trimmed so the block review can show that the program had to compromise.
+**Step 7 — SFI and duration budget.** Rather than trimming after the fact, the session duration and fatigue budgets are enforced *during* the greedy selection in Step 5. Before adding each candidate exercise, the engine projects the new aggregate SFI and the new estimated session duration (warmup + working sets + RPE-scaled rest periods). If either limit would be exceeded, the candidate is skipped. The session is flagged `durationTrimmed: true` if any exercise was excluded for this reason, keeping the block-review advisory intact.
 
 **Step 8 — attach a back-off protocol.** After the top set, the lifter does back-off sets at a reduced load, repeating until their RPE rises to the prescribed target. The drop size now depends on both the phase *and the block week*: in Accumulation it interpolates linearly from 10% in week 1 up to 15% in the final week (more dropdown volume as the lifter is moving more weight); in Intensification it goes 5% → 8%; in Realisation it stays a flat 2% (the goal there is heavy practice, not volume).
 
 ---
 
-## 5. The weekly template
+## 5. Session structure and exercise selection
 
-Every session is built from one of four day templates, plus an optional general-physical-preparation slot for any extra training days. The choice of template depends only on which weekday the session falls on.
+Every session is anchored by one primary lift (or no primary lift on accessory-only days). The surrounding exercises are chosen programmatically by the scoring system described in Section 4, Step 5.
 
-```mermaid
-flowchart TD
-  Wk[Training week]
-  Wk --> Mon[Monday<br/>SQUAT focus]
-  Wk --> Wed[Wednesday<br/>BENCH focus]
-  Wk --> Fri[Friday<br/>DEADLIFT focus]
-  Wk --> Sat[Saturday<br/>BENCH variation focus]
-  Wk -.optional.-> Other[Other days<br/>GPP / accessory]
+### Movement pattern taxonomy
 
-  subgraph DayStructure[Each day is structured as:]
-    direction LR
-    PRI[PRIMARY<br/>heavy main lift]
-    ASS[ASSIST<br/>strength variation<br/>weak-point biased]
-    SUP[SUPP<br/>hypertrophy work x 2<br/>weak-point biased]
-    COR[CORE]
-    PRI --> ASS --> SUP --> COR
-  end
+The catalog tags every exercise with a `movementPattern` that the scheduler uses to enforce push/pull balance within sessions and across the week:
 
-  Mon --> DayStructure
-  Wed --> DayStructure
-  Fri --> DayStructure
-  Sat --> DayStructure
+| Pattern | Examples |
+|---|---|
+| `squat` | Back squat, front squat, goblet squat, leg press, box squat |
+| `hip_hinge` | Conventional DL, sumo DL, RDL, good morning, deficit DL |
+| `horizontal_push` | Bench press, close-grip bench, incline press, dumbbell bench |
+| `horizontal_pull` | Barbell row, cable row, chest-supported row, dumbbell row |
+| `vertical_push` | Overhead press, landmine press, push press |
+| `vertical_pull` | Lat pulldown, pull-up, chin-up, cable pullover |
+| `isolation_push` | Tricep pushdown, lateral raise, pec deck, cable fly |
+| `isolation_pull` | Dumbbell curl, face pull, rear delt fly, hammer curl |
+| `isolation_lower` | Leg curl, leg extension, calf raise, hip thrust |
+| `carry` | Farmer's walk, yoke carry |
+| `core` | Plank, ab wheel, dead bug, Pallof press |
 
-  classDef day fill:#fff3eb,stroke:#ff6e3a,color:#333;
-  classDef tag fill:#fef9e9,stroke:#e8c14e,color:#333;
-  class Mon,Wed,Fri,Sat,Other day;
-  class PRI,ASS,SUP,COR tag;
-```
+The engine aggregates push-pattern exercises (`horizontal_push`, `vertical_push`, `isolation_push`) and pull-pattern exercises (`horizontal_pull`, `vertical_pull`, `isolation_pull`) and steers the session toward a 1:1 ratio (configurable via `pushPullTargetRatio` in EngineConstants).
 
-*Diagram 4 — the four day templates and the shape of each session. Every day reuses the same PRIMARY → ASSIST → SUPP × 2 → CORE structure; only the exercises change. The ASSIST and SUPP slots are filled by the base template first, then overwritten by the weak-point swap from step 5 of the generator.*
+### Typical session shape
 
-The base template for each focus (before the weak-point swap):
+While there are no fixed exercise slots, a typical 4-day session will end up looking roughly like this — an emergent product of the scoring system, not a template:
 
-| Focus            | PRIMARY              | ASSIST              | SUPP                              | CORE  |
-| ---------------- | -------------------- | ------------------- | --------------------------------- | ----- |
-| Squat            | Back squat           | Paused squat        | Romanian DL, Leg curl             | Plank |
-| Bench            | Bench press          | Overhead press      | Cable row, Dumbbell curl          | Plank |
-| Deadlift         | Conventional DL      | Front squat         | Barbell row, Leg extension        | Plank |
-| Bench variation  | Close-grip bench     | Incline press       | Lat pulldown, Lateral raise       | Plank |
+**Squat day** — squat primary + 1–2 lower accessories (scored by quad/hamstring/glute deficit) + 1–2 upper accessories (pull pattern, scored by upper-body deficits built up earlier in the week) + core.
 
-But once a lifter has filled in their weak points, the ASSIST and SUPP slots get overwritten with weak-point-matched picks from a catalog of roughly 70 exercises tagged with the failure patterns they address. A few examples:
+**Bench day** — bench primary + horizontal/vertical pull (pull-pattern balance) + isolation work for pecs/triceps/delts + core.
 
-- *Squat, "out of the hole"* → paused squat, box squat, high-bar squat, heel-elevated squat, safety-bar squat.
+**Deadlift day** — deadlift primary + lower accessories (hamstrings, glutes) + upper pull accessories + core.
+
+**Extra day (4th training day)** — no primary lift; scored entirely by which muscle groups are most behind on their weekly targets.
+
+### Weak-point bias
+
+Weak-point targeting is no longer a post-hoc slot swap. The scoring system applies a 1.5–2.5× multiplier to any exercise whose `weakPointTargets` matches the lifter's declared failure pattern, making those exercises consistently win the greedy selection when they are relevant. The catalog still contains the same ~70+ targeted variations:
+
+- *Squat, "out of the hole"* → paused squat, box squat, heel-elevated squat, safety-bar squat.
 - *Bench, "off the chest"* → paused bench, Spoto press.
 - *Deadlift, "off the floor"* → deficit deadlift, snatch-grip deadlift, good morning.
 
-**What the tags mean:**
+**What the exercise tags mean:**
 
-- **PRIMARY** — the heavy main lift for the day; the only exercise that responds to phase modifiers on RPE/reps/sets, and the only one whose load is computed directly from the lifter's e1RM and the personal RPE table.
-- **ASSIST** — a strength variation of the primary, typically biased to a weak point, with load assigned at roughly 75% of the primary's prescription.
-- **SUPP** — supplemental hypertrophy work, picked to round out muscle groups not fully covered by the primary and assist, also weak-point-biased when relevant.
-- **CORE** — trunk work, almost always plank, always present.
+- **PRIMARY** — the heavy main lift; the only tag that responds to phase RPE/reps/sets modifiers and direct e1RM-based load prescription.
+- **ASSIST** — strength variation of the primary, biased to the weak point (now selected by score, not a fixed slot).
+- **SUPP** — supplemental hypertrophy work (now selected by score against muscle deficits).
+- **CORE** — trunk work; always guaranteed at least one per session.
 
-The lifter can exclude individual exercises during onboarding (or anytime later in their schedule), and they can add custom exercises through the catalog screen. Excluded and custom exercises are persisted to the profile.
+The lifter can still exclude individual exercises (persisted to the profile) and add custom exercises through the catalog screen.
 
 ---
 
@@ -345,7 +349,7 @@ flowchart LR
 
 **What it uses:** A minimum effective volume (MEV) and maximum recoverable volume (MRV) per muscle group — for example, quads might be MEV 10 / MRV 22 sets per week. The week's target rises linearly from MEV in week 1 to MRV in the final week. If readiness is sustained low the target shrinks by 10%; if it's excellent it grows by 5% (capped just below MRV).
 
-**What it changes:** It doesn't change the generated block directly — the template is fixed — but it shows up in the block review as a per-muscle-group bar chart with MEV / MAV / MRV landmarks, fed by the per-session muscle-group tallies that the logging pipeline accumulates into the block's `weeklyMuscleVolume` map.
+**What it changes:** The per-muscle weekly target now *drives session generation directly* — `computeWeeklyMuscleTargets()` calls `volumeBudget()` for each muscle at the start of every microcycle, and the resulting targets feed into the exercise scoring system (Step 5), making exercises that address under-served muscles score higher. Volume also shows up in the block review as a per-muscle-group bar chart with MEV / MAV / MRV landmarks, fed by the per-session muscle-group tallies the logging pipeline accumulates into the block's `weeklyMuscleVolume` map.
 
 ### 6.6 Peak and stall detection — *is progress real, or is the lifter cooked?*
 
@@ -430,7 +434,7 @@ flowchart TD
 
 **What it uses:** At the end of every development block, for each accessory the lifter logged at least six weeks of: the Pearson correlation between that accessory's weekly volume load and the parent lift's weekly best e1RM.
 
-**What it changes:** Any correlation with |r| > 0.4 is stored on the profile. This data isn't yet driving exercise selection automatically, but it shows up in the Weak Point block-review screen so coaches and the lifter can see which accessories appear to be pulling their weight.
+**What it changes:** Any Spearman correlation with |ρ| > 0.4 is stored on the profile. These correlations now feed directly into exercise scoring: a responsive accessory earns a `1 + ρ` multiplier in the greedy selection, making it more likely to appear in future sessions (Section 4, Step 5). Results also show up in the Weak Point block-review screen so coaches and the lifter can see which accessories are pulling their weight.
 
 ### 6.10 Session duration estimator — *will the workout fit in the time the lifter has?*
 
@@ -580,8 +584,8 @@ For engineers who want to look at the implementation, every section above maps t
 | VBT calibration (§2, §6.1)               | `tensile-app/src/screens/session/VbtCalibration.tsx` — linear regression of load on velocity. Stored either globally as `profile.lvProfile` (all-lifts fallback) or per-lift in `profile.lvProfiles[squat\|bench\|deadlift]`. Resolved at lookup via `resolveLvProfile` in `engine.ts`. |
 | Per-session logging (§3, §7)             | `tensile-app/src/screens/session/` (Wellness with manual HRV, ReadinessBrief, TopSet, DropProtocol, Summary) + `logSet` / `completeSession` in `store.ts` |
 | Block generator pipeline (§4)            | `tensile-app/src/store.ts` — `generateBlock`, `generateFirstBlock`, `generateNextDevelopmentBlock`, `generateDeloadBlock`, `generatePivotBlock`, `generateRestBlock` |
-| Weekly day templates and weak-point swap (§5) | `tensile-app/src/store.ts` — `createDayPlan`; `tensile-app/src/engine.ts` — `getAccessoryTemplate`                                          |
-| Exercise catalog (§5)                    | `tensile-app/src/exerciseCatalog.ts` — ~70 builtins with `primaryMuscles`, `efc`, and `weakPointTargets`                                        |
+| Session structure and exercise selection (§5) | `tensile-app/src/engine.ts` — `assignPrimaryLiftsTodays`, `estimateMuscleReadiness`, `computeWeeklyMuscleTargets`, `scoreExerciseForSession` (internal), `buildProgrammaticSession`, `planMicrocycle`, `planBlock`, `planProgram` |
+| Exercise catalog (§5)                    | `tensile-app/src/exerciseCatalog.ts` — 84+ builtins with `primaryMuscles`, `efc`, `weakPointTargets`, and `movementPattern`                     |
 | Ensemble e1RM (§6.1)                     | `tensile-app/src/engine.ts` — `calculateE1RM`, `ensembleE1RM`                                                                                    |
 | Personalised RPE table (§6.2)            | `tensile-app/src/engine.ts` — `DEFAULT_RPE_TABLE`, `getRpePct`, `personalizeRpeTable`, `isRpeOutlier`, `detectRpeOutlier` (load + LRV check), `expectedLastRepVelocity`. LRV input captured in `TopSet.tsx` / `DropProtocol.tsx` under the velocity disclosure. |
 | Session Fatigue Index (§6.3)             | `tensile-app/src/engine.ts` — `calculateSetSFI`, `calculateSessionSFI`, `DEFAULT_EFC` (~70 entries)                                              |
@@ -591,8 +595,8 @@ For engineers who want to look at the implementation, every section above maps t
 | ACLR (§6.7)                              | `tensile-app/src/engine.ts` — `computeEwmaAclr`, `ewmaAclrSeries` (Williams 2017 EWMA). Consumed by `tensile-app/src/screens/block/Volume.tsx` (trend chart) and `tensile-app/src/screens/deload/DeloadRec.tsx` (deload-score flag). |
 | Deload score (§6.8)                      | `tensile-app/src/engine.ts` — `calculateDeloadScore`, `deloadRecommendation`; week-end auto-eval in `completeSession`; UI in `screens/deload/DeloadRec.tsx` |
 | Accessory responsiveness (§6.9)          | `tensile-app/src/engine.ts` — `pearsonCorrelation`; block-end computation in `generateNextDevelopmentBlock`                                     |
-| Session duration estimator (§6.10)       | `tensile-app/src/engine.ts` — `estimateSessionDuration`; cap enforcement in `createDayPlan`                                                     |
-| Phase modifiers and back-off drops (§4)  | `tensile-app/src/store.ts` — `createDayPlan` (PRIMARY RPE/reps/sets); `tensile-app/src/engine.ts` — `getBackOffDrop` (phase + block-week interpolation) |
+| Session duration estimator (§6.10)       | `tensile-app/src/engine.ts` — `estimateSessionDuration`; SFI + duration budget enforced during greedy selection in `buildProgrammaticSession`   |
+| Phase modifiers and back-off drops (§4)  | `tensile-app/src/engine.ts` — `buildProgrammaticSession` (PRIMARY RPE/reps/sets), `getBackOffDrop` (phase + block-week interpolation) |
 | Peaking timeline (§8)                    | `tensile-app/src/engine.ts` — `generatePeakingPlan`; UI in `screens/meet/Peaking.tsx`; `profile.peakingActive` locks development                  |
 | Block lifecycle (§8)                     | `tensile-app/src/store.ts` — block generator wrappers; `screens/block/NextBlock.tsx` triggers the transition                                     |
 | Audit log (§3, §6, §7)                   | `tensile-app/src/store.ts` — `Block.auditLog` populated by `completeSession` and block wrappers; UI in `screens/block/Audit.tsx`                |
