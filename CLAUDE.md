@@ -105,7 +105,7 @@ Zustand persist middleware serialises the entire store to IndexedDB on every wri
 
 ### `engine.ts` — Algorithm Engine
 
-Pure-function expert system. No side effects, no state. Eight algorithm subsystems:
+Pure-function expert system. No side effects, no state. Nine algorithm subsystems:
 
 | Subsystem | Key Function(s) | PRD §  |
 |-----------|----------------|--------|
@@ -117,6 +117,7 @@ Pure-function expert system. No side effects, no state. Eight algorithm subsyste
 | Deload score & trigger (8 signals) | `calculateDeloadScore()` | 6.8 |
 | Weak-point engine | `getAccessoryTemplate()` | 6.7 |
 | Volume budget (MEV/MRV) | `volumeBudget()` | 6.6 |
+| Programmatic scheduler | `assignPrimaryLiftsTodays()`, `estimateMuscleReadiness()`, `computeWeeklyMuscleTargets()`, `buildProgrammaticSession()`, `planMicrocycle()`, `planBlock()`, `planProgram()` | — |
 
 All tunable constants live in `EngineConstants` (accessed via `getConstants()` / `setConstants()`), enabling the replay harness to sweep parameters without touching source.
 
@@ -132,23 +133,24 @@ The Zustand store owns all application state and contains the block generation p
 - `completedBlocks` — historical blocks used by block-review screens
 
 **Block generation (7 steps)**:
-1. Pick phase (Accumulation → Intensification → Realisation cycle)
+1. Pick phase (Accumulation → Intensification → Realisation cycle; meet-date aware via `planProgram()`)
 2. Lay out weeks snapped to Monday, span = TTP estimate
-3. Fill available training days with lift-focus rotation
-4. Apply phase RPE/rep/set modifiers
-5. Weak-point swap: replace ASSIST/SUPP slots with targeted exercises
+3. Assign primary lifts to days via exhaustive permutation search (≥48 h squat–deadlift gap enforced)
+4. Apply phase RPE/rep/set modifiers to PRIMARY
+5. Greedy accessory selection scored by muscle deficit vs MEV/MRV target, muscle readiness (exponential fatigue decay), push/pull movement-pattern balance, weak-point priority, and accessory responsiveness
 6. Compute prescribed loads from e1RM × RPE table lookup
-7. Trim sessions to duration cap (drops SUPP → CORE → ASSIST order)
+7. SFI budget + duration cap enforced during greedy selection (not post-hoc trim)
 
 See `docs/program-generation.md` for the full annotated walkthrough.
 
 ### `exerciseCatalog.ts` — Exercise Database
 
-130+ exercises each with:
-- `tag`: `'PRIMARY' | 'ASSIST' | 'SUPP' | 'CORE'` — determines trim priority and role
-- `efc`: Exercise Fatigue Coefficient (e.g. squat = 1.40, cable flyes = 0.55) — used in SFI
-- `primaryMuscles`: array for volume-budget tracking (MEV/MRV)
-- `weakPointTargets`: failure positions this exercise addresses
+84+ exercises each with:
+- `tag`: `'PRIMARY' | 'ASSIST' | 'SUPP' | 'CORE'` — determines role; PRIMARY is the only tag that receives phase modifiers
+- `efc`: Exercise Fatigue Coefficient (e.g. squat = 1.40, cable flyes = 0.55) — used in SFI and muscle readiness half-life selection
+- `primaryMuscles`: array for volume-budget tracking (MEV/MRV) and weekly deficit scoring
+- `weakPointTargets`: failure positions this exercise addresses (used as a scoring multiplier in the greedy selector)
+- `movementPattern`: `MovementPattern` type — used by the scheduler for push/pull session balance
 - `defaultSets / defaultReps / defaultRpe`: block-generation starting values
 
 ### `shared.tsx` — Design System

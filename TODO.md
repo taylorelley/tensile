@@ -1,7 +1,7 @@
 # Tensile — Known Remaining Tasks
 
 > Auto-generated from codebase audit against PRD §4–§7.
-> Last updated: 2026-05-16
+> Last updated: 2026-05-17
 
 ---
 
@@ -20,8 +20,8 @@
 - ✅ `LiftsLibrary.tsx` editor allows selecting primary muscles for custom exercises.
 - ✅ Volume budget card in `Today.tsx` shows current week vs MEV/MAV/MRV for session muscle groups.
 
-**Still needed:**
-- In `createDayPlan`, call `volumeBudget()` per muscle group and dynamically cap/extend sets (currently static templates with weak-point bias).
+**Also completed:**
+- ✅ `computeWeeklyMuscleTargets()` calls `volumeBudget()` per muscle group each microcycle; targets feed directly into `scoreExerciseForSession()` as muscle-deficit scores, replacing static templates.
 
 ---
 
@@ -31,8 +31,8 @@
 
 **Completed:**
 - ✅ `CatalogEntry.weakPointTargets: { liftId: string; position: string }[]` added (e.g. `paused_squat` targets `squat:out_of_hole`).
-- ✅ `getAccessoryTemplate(primaryLift, blockPhase, weakPoints, catalog)` in `engine.ts` biases selection toward weak-point-targeting exercises (priority score ×1.5).
-- ✅ `createDayPlan` uses `getAccessoryTemplate` to swap ASSIST/SUPP exercises toward weak-point targets.
+- ✅ Weak-point priority weighting (×1.5–2.5) built into `scoreExerciseForSession()` in `engine.ts`; exercises whose `weakPointTargets` match the lifter's failure pattern score proportionally higher in the greedy selector.
+- ✅ `buildProgrammaticSession()` in `engine.ts` replaces `createDayPlan`; accessory selection is now fully scored rather than template-swapped.
 - ✅ At block end, `generateNextDevelopmentBlock` computes Pearson r between each accessory's weekly volume and primary lift e1RM delta.
 - ✅ Correlation stored in `profile.accessoryResponsiveness` if |r| > 0.4 and n ≥ 6.
 - ✅ `WeakPointReview.tsx` surfaces stored correlation findings with mini bar charts.
@@ -191,7 +191,7 @@
 - ✅ `estimateSessionDuration()` in `engine.ts` computes warm-up + working sets + rest periods.
 - ✅ Rest periods derived from RPE target: ≥8 → 4 min, 7–8 → 2.5 min, ≤7 → 1.75 min.
 - ✅ `Today.tsx` uses `estimateSessionDuration()` instead of hardcoded `sets × 3.5`.
-- ✅ In `createDayPlan`, enforce `profile.sessionDuration` cap by reducing back-off sets for lowest-priority exercises (SUPP → CORE → ASSIST).
+- ✅ SFI budget (`sfiBudgetPerSession`) and duration cap enforced *during* greedy exercise selection in `buildProgrammaticSession()`, replacing the post-hoc SUPP→CORE→ASSIST drop order.
 - ✅ Surface advisory when session is trimmed to fit duration (`durationTrimmed` flag in `Today.tsx`).
 
 ---
