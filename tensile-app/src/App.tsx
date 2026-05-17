@@ -1,6 +1,7 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useStore } from './store';
+import { T } from './shared';
 
 // Onboarding
 import Welcome from './screens/onboarding/Welcome';
@@ -14,6 +15,7 @@ import FirstBlock from './screens/onboarding/FirstBlock';
 // Session
 import Today from './screens/session/Today';
 import UpcomingSessions from './screens/session/UpcomingSessions';
+import SessionPreview from './screens/session/SessionPreview';
 import Wellness from './screens/session/Wellness';
 import ReadinessBrief from './screens/session/ReadinessBrief';
 import Warmup from './screens/session/Warmup';
@@ -51,8 +53,10 @@ import Attempts from './screens/meet/Attempts';
 import Settings from './screens/Settings';
 
 function App() {
+  const navigate = useNavigate();
   const onboardingComplete = useStore(s => s.onboardingComplete);
   const currentBlock = useStore(s => s.currentBlock);
+  const currentSession = useStore(s => s.currentSession);
   const setCurrentSession = useStore(s => s.setCurrentSession);
 
   // Restore in-progress session on mount (currentSession is not persisted)
@@ -65,7 +69,7 @@ function App() {
   }, [currentBlock, setCurrentSession]);
 
   return (
-    <Routes>
+    <><Routes>
       {!onboardingComplete ? (
         <>
           <Route path="/" element={<Welcome />} />
@@ -81,6 +85,7 @@ function App() {
         <>
           <Route path="/" element={<Today />} />
           <Route path="/sessions" element={<UpcomingSessions />} />
+          <Route path="/session/preview/:sessionId" element={<SessionPreview />} />
           <Route path="/session/wellness" element={<Wellness />} />
           <Route path="/session/readiness" element={<ReadinessBrief />} />
           <Route path="/session/warmup" element={<Warmup />} />
@@ -108,6 +113,58 @@ function App() {
         </>
       )}
     </Routes>
+    {currentSession?.status === 'IN_PROGRESS' && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 100,
+          background: T.accent,
+          color: '#1a0f08',
+          padding: '10px 22px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontFamily: T.mono,
+          fontSize: 11,
+          letterSpacing: '0.06em',
+        }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 99, background: '#1a0f08' }} />
+            WORKOUT IN PROGRESS · {currentSession.exercises?.[currentSession.currentExerciseIndex || 0]?.name || 'Session'}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              const exIdx = currentSession.currentExerciseIndex || 0;
+              const currentEx = currentSession.exercises?.[exIdx];
+              if (!currentEx) {
+                navigate('/session/warmup');
+                return;
+              }
+              const exSets = currentSession.sets.filter(s => s.exerciseId === currentEx.id);
+              const hasTopSet = exSets.some(s => s.setType === 'TOP_SET');
+              const hasBackOff = exSets.some(s => s.setType === 'BACK_OFF');
+              if (!hasTopSet) { navigate('/session/topset'); return; }
+              if (hasBackOff) {
+                const lastBackOff = [...exSets].reverse().find(s => s.setType === 'BACK_OFF');
+                if (lastBackOff && lastBackOff.actualRpe >= lastBackOff.prescribedRpeTarget) {
+                  navigate('/session/summary');
+                } else {
+                  navigate('/session/drop');
+                }
+              } else {
+                navigate('/session/drop');
+              }
+            }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: T.mono, fontSize: 11, color: '#1a0f08', fontWeight: 600 }}
+          >
+            RESUME →
+          </button>
+        </div>
+      )}
+  </>
   );
 }
 

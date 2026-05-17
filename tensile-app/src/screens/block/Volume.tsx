@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import type { Session } from '../../store';
-import { Phone, TabBar, T, Chart, ChartBars, ChartEmpty } from '../../shared';
+import { Phone, TabBar, T, Chart, ChartBars, ChartEmpty, BlockSubNav } from '../../shared';
 import { volumeBudget, ewmaAclrSeries } from '../../engine';
 
 function weeklyAverage(
@@ -165,6 +165,7 @@ export default function Volume() {
           2 / 6 ›
         </div>
       </div>
+      <BlockSubNav active="volume" />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
         <div
           style={{
@@ -199,7 +200,7 @@ export default function Volume() {
               <div key={mg.key} style={{ marginBottom: 18 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                   <span style={{ fontSize: 12.5, fontWeight: 500 }}>{mg.label}</span>
-                  <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, letterSpacing: '0.06em' }}>
+                  <span className="tns-mono" style={{ fontSize: 11, color: T.textMute, letterSpacing: '0.06em' }}>
                     BUDGET {budget} · MEV {mev} · MRV {mrv}
                   </span>
                 </div>
@@ -212,7 +213,7 @@ export default function Volume() {
                         justifyContent: 'space-between',
                         marginTop: 4,
                         fontFamily: T.mono,
-                        fontSize: 9,
+                        fontSize: 11,
                         color: T.textMute,
                         letterSpacing: '0.06em',
                       }}
@@ -238,24 +239,24 @@ export default function Volume() {
           {setCountHasData ? (
             <>
               <ChartBars data={setCountData} w={300} h={80} />
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginTop: 4,
-                  fontFamily: T.mono,
-                  fontSize: 9,
-                  color: T.textMute,
-                  letterSpacing: '0.06em',
-                }}
-              >
-                {setCountData.map((_, i) => (
-                  <span key={i}>W{i + 1}</span>
-                ))}
-              </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginTop: 4,
+                    fontFamily: T.mono,
+                    fontSize: 11,
+                    color: T.textMute,
+                    letterSpacing: '0.06em',
+                  }}
+                >
+                  {setCountData.map((_, i) => (
+                    <span key={i}>W{i + 1}</span>
+                  ))}
+                </div>
             </>
           ) : (
-            <ChartEmpty message="NO WORKING SETS LOGGED YET" h={80} />
+            <ChartEmpty message="Complete sessions to see volume data" h={80} />
           )}
         </div>
 
@@ -287,7 +288,7 @@ export default function Volume() {
                   justifyContent: 'space-between',
                   marginTop: 4,
                   fontFamily: T.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   color: T.textMute,
                   letterSpacing: '0.06em',
                 }}

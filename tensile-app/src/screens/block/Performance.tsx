@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import type { Session } from '../../store';
-import { Phone, TabBar, T, Chart, ChartEmpty, Spark } from '../../shared';
+import { Phone, TabBar, T, Chart, ChartEmpty, Spark, BlockSubNav } from '../../shared';
 import { detectPeak, detectStall } from '../../engine';
 
 function weeklyBestE1rm(
@@ -116,6 +116,7 @@ export default function Performance() {
           1 / 6 ›
         </div>
       </div>
+      <BlockSubNav active="performance" />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
         <div
           style={{
@@ -181,24 +182,24 @@ export default function Performance() {
           {squatHasData ? (
             <>
               <Chart data={squatTrend} peak={squatPeakWeek >= 0 ? squatPeakWeek : undefined} w={320} h={110} />
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginTop: 4,
-                  fontFamily: T.mono,
-                  fontSize: 9,
-                  color: T.textMute,
-                  letterSpacing: '0.06em',
-                }}
-              >
-                {squatTrend.map((_, i) => (
-                  <span key={i}>WK {i + 1}</span>
-                ))}
-              </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginTop: 4,
+                    fontFamily: T.mono,
+                    fontSize: 11,
+                    color: T.textMute,
+                    letterSpacing: '0.06em',
+                  }}
+                >
+                  {squatTrend.map((_, i) => (
+                    <span key={i}>WK {i + 1}</span>
+                  ))}
+                </div>
             </>
           ) : (
-            <ChartEmpty message="LOG A SQUAT SESSION TO SEE TRENDS" h={110} />
+            <ChartEmpty message="Complete 2 sessions to see trends" h={110} />
           )}
         </div>
 
@@ -254,7 +255,7 @@ export default function Performance() {
                   </span>
                   <span
                     className="tns-mono"
-                    style={{ fontSize: 9, color: T.textMute, marginLeft: 3 }}
+                    style={{ fontSize: 11, color: T.textMute, marginLeft: 3 }}
                   >
                     KG
                   </span>
@@ -298,7 +299,7 @@ export default function Performance() {
                 </span>
                 <span
                   className="tns-mono"
-                  style={{ fontSize: 9, color: T.textMute }}
+                  style={{ fontSize: 11, color: T.textMute }}
                 >
                   {u}
                 </span>

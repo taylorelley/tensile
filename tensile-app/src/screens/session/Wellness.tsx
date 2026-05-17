@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { calculateRCS, hrvCoefficientOfVariation } from '../../engine';
-import { T, Phone, AppHeader, PrimaryBtn, Spark } from '../../shared';
+import { T, Phone, AppHeader, PrimaryBtn, Spark, StepDots } from '../../shared';
 
 function WellnessSlider({ label, value, low, high, onChange }: {
   label: string; value: number; low: string; high: string; onChange: (v: number) => void;
@@ -36,7 +36,13 @@ function WellnessSlider({ label, value, low, high, onChange }: {
       </div>
       <div
         ref={trackRef}
-        style={{ position: 'relative', height: 4, background: T.surface, cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
+        role="slider"
+        aria-valuemin={1}
+        aria-valuemax={10}
+        aria-valuenow={displayValue}
+        aria-label={label}
+        tabIndex={0}
+        style={{ position: 'relative', height: 6, background: T.surface, cursor: 'pointer', touchAction: 'none', userSelect: 'none', padding: '8px 0' }}
         onClick={(e) => {
           if (didDrag.current) { didDrag.current = false; return; }
           const rect = e.currentTarget.getBoundingClientRect();
@@ -45,6 +51,19 @@ function WellnessSlider({ label, value, low, high, onChange }: {
           const clamped = Math.max(1, Math.min(10, newVal));
           setDisplayValue(clamped);
           onChangeRef.current(clamped);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            const newVal = Math.max(1, displayValue - 1);
+            setDisplayValue(newVal);
+            onChangeRef.current(newVal);
+          } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            const newVal = Math.min(10, displayValue + 1);
+            setDisplayValue(newVal);
+            onChangeRef.current(newVal);
+          }
         }}
         onMouseDown={(e) => {
           draggingRef.current = true;
@@ -93,10 +112,11 @@ function WellnessSlider({ label, value, low, high, onChange }: {
           window.addEventListener('touchcancel', handleEnd);
         }}
       >
-        <div style={{ position: 'absolute', inset: 0, width: pct + '%', background: colorPct }} />
+        <div style={{ position: 'absolute', inset: '8px 0', width: pct + '%', background: colorPct }} />
         <div style={{
-          position: 'absolute', left: `calc(${pct}% - 6px)`, top: -4,
-          width: 12, height: 12, background: T.text, border: `2px solid ${colorPct}`,
+          position: 'absolute', left: `calc(${pct}% - 10px)`, top: 1,
+          width: 20, height: 20, borderRadius: 99,
+          background: T.text, border: `2px solid ${colorPct}`,
         }} />
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5, fontFamily: T.mono, fontSize: 9, color: T.textMute, letterSpacing: '0.06em' }}>
@@ -184,28 +204,53 @@ export default function Wellness() {
   return (
     <Phone>
       <AppHeader eyebrow="Pre-session · 02:11 min" title="Readiness" back onBack={() => navigate(-1)} />
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
+      <div style={{ padding: '0 22px 8px' }}>
+        <StepDots step={1} total={6} />
+      </div>
+      <div className="route-enter" style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
         <div style={{ fontSize: 12, color: T.textDim, marginBottom: 24, lineHeight: 1.55 }}>
           Drag each marker. Sleep and fatigue weigh heaviest — they're the strongest predictors of today's readiness.
         </div>
+        {block && block.sessions.filter(s => s.status === 'COMPLETE').length >= 1 && (
+          <div style={{ textAlign: 'center', marginBottom: 18 }}>
+            <button type="button" className="tns-mono" style={{ fontSize: 10, color: T.textMute, cursor: 'pointer', padding: '8px 12px', background: 'none', border: 'none', fontFamily: 'inherit' }} aria-label="Use last session's wellness values" onClick={() => {
+              const completed = block.sessions
+                .filter(s => s.status === 'COMPLETE')
+                .sort((a, b) => new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime());
+              const last = completed[0];
+              if (last?.wellness) {
+                setSleepQuality(last.wellness.sleepQuality);
+                setOverallFatigue(last.wellness.overallFatigue);
+                setMuscleSoreness(last.wellness.muscleSoreness);
+                setMotivation(last.wellness.motivation);
+                setStress(last.wellness.stress);
+                setJointPain(last.wellness.jointPain ?? 1);
+              }
+            }}>
+              USE LAST SESSION'S VALUES →
+            </button>
+          </div>
+        )}
         <WellnessSlider label="Sleep quality" value={sleepQuality} low="VERY POOR" high="EXCELLENT" onChange={setSleepQuality} />
         <WellnessSlider label="Overall fatigue" value={overallFatigue} low="FATIGUED" high="ENERGISED" onChange={setOverallFatigue} />
-        <WellnessSlider label="Muscle soreness" value={muscleSoreness} low="SEVERE" high="NONE" onChange={setMuscleSoreness} />
+        <WellnessSlider label="Muscle recovery" value={muscleSoreness} low="VERY SORE" high="FULLY RECOVERED" onChange={setMuscleSoreness} />
         <WellnessSlider label="Motivation" value={motivation} low="POOR" high="HIGH" onChange={setMotivation} />
-        <WellnessSlider label="Non-training stress" value={stress} low="EXTREME" high="NONE" onChange={setStress} />
-        <WellnessSlider label="Joint pain" value={jointPain} low="NONE" high="SEVERE" onChange={setJointPain} />
+        <WellnessSlider label="Stress level" value={stress} low="EXTREME" high="NONE" onChange={setStress} />
+        <WellnessSlider label="Joint health" value={jointPain} low="SEVERE PAIN" high="NO PAIN" onChange={setJointPain} />
 
         {/* Manual HRV entry */}
         <div style={{ marginTop: 14, marginBottom: 4 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="tns-eyebrow">HRV (optional)</span>
-            <span className="tns-mono" style={{ fontSize: 9, color: T.accent, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => setShowHrvInput(!showHrvInput)}>
+            <button type="button" className="tns-mono" style={{ fontSize: 9, color: T.accent, letterSpacing: '0.08em', cursor: 'pointer', background: 'none', border: 'none', fontFamily: 'inherit' }} aria-expanded={showHrvInput} onClick={() => setShowHrvInput(!showHrvInput)}>
               {showHrvInput ? 'HIDE' : 'ADD HRV →'}
-            </span>
+            </button>
           </div>
           {showHrvInput && (
             <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <label htmlFor="hrv-input" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0,0,0,0)' }}>HRV rMSSD in milliseconds</label>
               <input
+                id="hrv-input"
                 type="number"
                 value={hrvInput ?? ''}
                 onChange={e => setHrvInput(e.target.value ? Number(e.target.value) : undefined)}

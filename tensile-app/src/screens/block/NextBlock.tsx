@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
-import { Phone, TabBar, T, PrimaryBtn } from '../../shared';
+import { Phone, TabBar, T, PrimaryBtn, BlockSubNav } from '../../shared';
 import { getBackOffDrop } from '../../engine';
 
 export default function NextBlock() {
@@ -49,6 +49,7 @@ export default function NextBlock() {
           6 / 6
         </div>
       </div>
+      <BlockSubNav active="next" />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
         <div
           style={{

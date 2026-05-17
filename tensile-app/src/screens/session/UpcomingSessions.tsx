@@ -17,6 +17,8 @@ const STATUS_COLOR: Record<string, string> = {
 export default function UpcomingSessions() {
   const navigate = useNavigate();
   const block = useStore(s => s.currentBlock);
+  const startSession = useStore(s => s.startSession);
+  const isGeneratingBlock = useStore(s => s.isGeneratingBlock);
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -69,9 +71,12 @@ export default function UpcomingSessions() {
           const wk = weekNum(s.scheduledDate);
           const dotColor = STATUS_COLOR[s.status] ?? T.textMute;
 
+          const canStart = s.status === 'SCHEDULED';
+
           return (
             <div
               key={s.id}
+              onClick={() => navigate(`/session/preview/${s.id}`)}
               style={{
                 display: 'flex',
                 alignItems: 'stretch',
@@ -79,6 +84,7 @@ export default function UpcomingSessions() {
                 opacity: isPast ? 0.45 : 1,
                 background: isToday ? 'rgba(255,110,58,0.05)' : 'transparent',
                 borderLeft: isToday ? `2px solid ${T.accent}` : '2px solid transparent',
+                cursor: 'pointer',
               }}
             >
               {/* Status dot column */}
@@ -104,6 +110,27 @@ export default function UpcomingSessions() {
                     {s.exercises.length} EX · {rpeRange(s)}
                   </div>
                 </div>
+                {canStart && (
+                  <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="tns-mono"
+                      style={{
+                        fontSize: 10, color: T.accent, letterSpacing: '0.08em',
+                        cursor: 'pointer', padding: '6px 10px', background: 'none',
+                        border: `1px solid ${T.lineSoft}`, fontFamily: 'inherit',
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startSession(block.id, s.id);
+                        navigate('/session/wellness');
+                      }}
+                      disabled={isGeneratingBlock}
+                    >
+                      START NOW →
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           );

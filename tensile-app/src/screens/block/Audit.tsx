@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
-import { Phone, TabBar, T } from '../../shared';
+import { Phone, TabBar, T, BlockSubNav } from '../../shared';
 
 export default function Audit() {
   const navigate = useNavigate();
@@ -107,6 +107,7 @@ export default function Audit() {
           5 / 6 ›
         </div>
       </div>
+      <BlockSubNav active="audit" />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
         <div
           style={{

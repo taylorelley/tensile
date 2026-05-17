@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, type SetLog } from '../../store';
-import { T, Phone, AppHeader, PrimaryBtn, Stat } from '../../shared';
+import { T, Phone, AppHeader, PrimaryBtn, Stat, StepDots } from '../../shared';
 
 export default function Summary() {
   const navigate = useNavigate();
@@ -69,24 +69,33 @@ export default function Summary() {
 
   return (
     <Phone>
-      <AppHeader eyebrow="Session complete" title="Wrap" />
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
-        {/* sRPE prompt */}
+      <AppHeader eyebrow={hasMoreExercises ? 'Exercise complete' : 'Session complete'} title="Wrap" />
+      <div style={{ padding: '0 22px 8px' }}>
+        <StepDots step={6} total={6} />
+      </div>
+      <div className="route-enter" style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
+        {/* sRPE prompt — 5-point scale */}
         <div style={{ border: `1px solid ${T.line}`, padding: '14px 16px', marginBottom: 14 }}>
           <div className="tns-eyebrow" style={{ marginBottom: 8 }}>How hard was the overall session?</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(11, 1fr)', gap: 3, marginBottom: 6 }}>
-            {Array.from({ length: 11 }).map((_, i) => (
-              <div key={i} onClick={() => setSrpe(i)} style={{
-                padding: '10px 0', textAlign: 'center', cursor: 'pointer',
-                border: `1px solid ${i === srpe ? T.accent : T.line}`,
-                background: i === srpe ? T.accent : 'transparent',
-                color: i === srpe ? '#1a0f08' : T.text,
-                fontFamily: T.mono, fontSize: 11,
-              }}>{i}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4, marginBottom: 6 }}>
+            {([
+              { label: 'Easy', val: 3 },
+              { label: 'Moderate', val: 5 },
+              { label: 'Hard', val: 7 },
+              { label: 'Very Hard', val: 9 },
+              { label: 'Maximal', val: 10 },
+            ] as const).map((opt) => (
+              <button type="button" key={opt.val} aria-pressed={srpe === opt.val} aria-label={`Session RPE ${opt.val} - ${opt.label}`} onClick={() => setSrpe(opt.val)} style={{
+                padding: '12px 0', textAlign: 'center', cursor: 'pointer',
+                border: `1px solid ${srpe === opt.val ? T.accent : T.line}`,
+                background: srpe === opt.val ? T.accent : 'transparent',
+                color: srpe === opt.val ? '#1a0f08' : T.text,
+                fontFamily: T.mono, fontSize: 10, minHeight: 48, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
+              }}>
+                <span style={{ fontSize: 11, fontWeight: 500 }}>{opt.label}</span>
+                <span style={{ fontSize: 9, color: srpe === opt.val ? '#1a0f08' : T.textMute }}>sRPE {opt.val}</span>
+              </button>
             ))}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: T.mono, fontSize: 9, color: T.textMute, letterSpacing: '0.06em' }}>
-            <span>NOTHING</span><span>HARD</span><span>MAXIMAL</span>
           </div>
         </div>
 

@@ -451,6 +451,9 @@ interface AppState {
   generatePivotBlock: () => void;
   generateRestBlock: () => void;
 
+  /** True while a block is being generated — gates UI buttons */
+  isGeneratingBlock: boolean;
+
   currentSession: Session | null;
   /** Set by `startSession` internally; exposed for external override if needed */
   setCurrentSession: (s: Session | null) => void;
@@ -507,6 +510,8 @@ export const useStore = create<AppState>()(
           },
         });
       },
+
+      isGeneratingBlock: false,
 
       blocks: [],
       currentBlock: null,
@@ -775,12 +780,14 @@ export const useStore = create<AppState>()(
       },
 
       generateFirstBlock: () => {
+        set({ isGeneratingBlock: true });
         const profile = get().profile;
         const block = generateBlock(profile);
-        set({ blocks: [block], currentBlock: block, currentSession: null });
+        set({ blocks: [block], currentBlock: block, currentSession: null, isGeneratingBlock: false });
       },
 
       generateNextDevelopmentBlock: () => {
+        set({ isGeneratingBlock: true });
         const state = get();
         const profile = state.profile;
         if (profile.peakingActive) {
@@ -1015,10 +1022,12 @@ export const useStore = create<AppState>()(
           blocks: [...updatedBlocks, block],
           currentBlock: block,
           currentSession: null,
+          isGeneratingBlock: false,
         });
       },
 
       generateDeloadBlock: () => {
+        set({ isGeneratingBlock: true });
         const state = get();
         const profile = state.profile;
         const base = generateBlock(profile);
@@ -1052,10 +1061,12 @@ export const useStore = create<AppState>()(
           blocks: [...updatedBlocks, deloadBlock],
           currentBlock: deloadBlock,
           currentSession: null,
+          isGeneratingBlock: false,
         });
       },
 
       generatePivotBlock: () => {
+        set({ isGeneratingBlock: true });
         const state = get();
         const profile = state.profile;
         const base = generateBlock(profile);
@@ -1127,10 +1138,12 @@ export const useStore = create<AppState>()(
           blocks: [...updatedBlocks, pivotBlock],
           currentBlock: pivotBlock,
           currentSession: null,
+          isGeneratingBlock: false,
         });
       },
 
       generateRestBlock: () => {
+        set({ isGeneratingBlock: true });
         const state = get();
         const blockId = `block-${Date.now()}`;
         const start = new Date();
@@ -1161,6 +1174,7 @@ export const useStore = create<AppState>()(
           blocks: [...updatedBlocks, restBlock],
           currentBlock: restBlock,
           currentSession: null,
+          isGeneratingBlock: false,
         });
       },
 

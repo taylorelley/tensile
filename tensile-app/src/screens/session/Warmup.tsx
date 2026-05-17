@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { getRpePct } from '../../engine';
-import { T, Phone, AppHeader, PrimaryBtn } from '../../shared';
+import { T, Phone, AppHeader, PrimaryBtn, StepDots } from '../../shared';
 
 export default function Warmup() {
   const navigate = useNavigate();
@@ -68,14 +68,22 @@ export default function Warmup() {
   return (
     <Phone>
       <AppHeader eyebrow={`${ex?.name || 'Back squat'} · Warm-up`} title="Ramp" back onBack={() => navigate(-1)} />
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
-        {/* Rest timer */}
-        <div style={{ border: `1px solid ${T.line}`, padding: '16px 18px', marginBottom: 14, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-          <div>
-            <div className="tns-eyebrow" style={{ marginBottom: 4 }}>Rest</div>
-            <span className="tns-serif" style={{ fontSize: 46, lineHeight: 0.9 }}>{fmtTime(restSeconds)}</span>
+      <div style={{ padding: '0 22px 8px' }}>
+        <StepDots step={3} total={6} />
+      </div>
+      <div className="route-enter" style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
+        {/* Rest timer — tappable */}
+        <div
+          onClick={() => navigate('/session/topset')}
+          style={{ border: `1px solid ${T.line}`, padding: '16px 18px', marginBottom: 14, cursor: 'pointer', background: T.surface2 }}
+        >
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+            <div>
+              <div className="tns-eyebrow" style={{ marginBottom: 4 }}>Rest</div>
+              <span className="tns-serif" style={{ fontSize: 46, lineHeight: 0.9 }}>{fmtTime(restSeconds)}</span>
+            </div>
+            <div className="tns-mono" style={{ fontSize: 10, color: T.accent, letterSpacing: '0.1em' }}>TAP TO START TOP SET →</div>
           </div>
-          <div className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.1em', cursor: 'pointer' }} onClick={() => navigate('/session/topset')}>SKIP →</div>
         </div>
 
         <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Warm-up progression</div>
@@ -121,7 +129,9 @@ export default function Warmup() {
         </div>
       </div>
       <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}` }}>
-        <PrimaryBtn onClick={() => navigate('/session/topset')}>Start top set →</PrimaryBtn>
+        <PrimaryBtn onClick={() => navigate('/session/topset')}>
+          {completedWarmups.length === warmupSets.length ? 'Ready →' : 'Start top set →'}
+        </PrimaryBtn>
       </div>
     </Phone>
   );

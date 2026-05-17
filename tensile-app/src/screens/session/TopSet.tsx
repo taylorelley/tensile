@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { ensembleE1RM, calculateE1RM, getRpePct, calculateSetSFI, expectedLastRepVelocity, inferLiftKey, resolveLvProfile } from '../../engine';
-import { T, Phone, PrimaryBtn } from '../../shared';
+import { T, Phone, AppHeader, PrimaryBtn, StepDots } from '../../shared';
 import type { SetLog } from '../../store';
 
 function makeSetId(): string {
@@ -10,17 +10,25 @@ function makeSetId(): string {
 }
 
 function RPEPad({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const levels = [6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
+  const rows = [
+    [6, 6.5, 7],
+    [7.5, 8, 8.5],
+    [9, 9.5, 10],
+  ];
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, 1fr)', gap: 4 }}>
-      {levels.map(l => (
-        <div key={l} onClick={() => onChange(l)} style={{
-          padding: '14px 0', textAlign: 'center', cursor: 'pointer',
-          border: `1px solid ${l === value ? T.accent : T.line}`,
-          background: l === value ? T.accent : 'transparent',
-          color: l === value ? '#1a0f08' : T.text,
-          fontFamily: T.mono, fontSize: 12, fontWeight: 500,
-        }}>{l}</div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+      {rows.flat().map(l => (
+        <button key={l} type="button"
+          aria-pressed={l === value}
+          aria-label={`RPE ${l}`}
+          onClick={() => onChange(l)} style={{
+            padding: '14px 0', textAlign: 'center', cursor: 'pointer',
+            border: `1px solid ${l === value ? T.accent : T.line}`,
+            background: l === value ? T.accent : 'transparent',
+            color: l === value ? '#1a0f08' : T.text,
+            fontFamily: T.mono, fontSize: 13, fontWeight: 500,
+            minHeight: 48,
+          }}>{l}</button>
       ))}
     </div>
   );
@@ -54,12 +62,13 @@ export default function TopSet() {
   const [velocity, setVelocity] = useState<number | undefined>(undefined);
   const [lastRepVelocity, setLastRepVelocity] = useState<number | undefined>(undefined);
   const [showVelocity, setShowVelocity] = useState(false);
+  const [showBreakdown, setShowBreakdown] = useState(false);
   if (!currentSession || !block) {
     return (
       <Phone>
         <div style={{ padding: '8px 22px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span className="tns-eyebrow">Top set</span>
-          <span className="tns-mono" style={{ fontSize: 11, color: T.textMute, cursor: 'pointer' }} onClick={() => navigate('/')}>×  CLOSE</span>
+          <button type="button" aria-label="Close" className="tns-mono" style={{ fontSize: 11, color: T.textMute, cursor: 'pointer', background: 'none', border: 'none', padding: 0, fontFamily: 'inherit' }} onClick={() => navigate('/')}>×  CLOSE</button>
         </div>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 22px' }}>
           <div style={{ textAlign: 'center' }}>
@@ -76,7 +85,7 @@ export default function TopSet() {
       <Phone>
         <div style={{ padding: '8px 22px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span className="tns-eyebrow">Top set</span>
-          <span className="tns-mono" style={{ fontSize: 11, color: T.textMute, cursor: 'pointer' }} onClick={() => navigate('/')}>×  CLOSE</span>
+          <button type="button" aria-label="Close" className="tns-mono" style={{ fontSize: 11, color: T.textMute, cursor: 'pointer', background: 'none', border: 'none', padding: 0, fontFamily: 'inherit' }} onClick={() => navigate('/')}>×  CLOSE</button>
         </div>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 22px' }}>
           <div style={{ textAlign: 'center' }}>
@@ -154,21 +163,51 @@ export default function TopSet() {
 
   return (
     <Phone>
-      <div style={{ padding: '8px 22px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span className="tns-eyebrow">{ex.name} · Set {currentSetNum} of {ex.sets} · Top</span>
-        <span className="tns-mono" style={{ fontSize: 11, color: T.textMute, cursor: 'pointer' }} onClick={() => navigate('/')}>×  CLOSE</span>
+      <AppHeader eyebrow={`${ex.name} · Set ${currentSetNum} of ${ex.sets} · Top`} title="Top set" close onClose={() => navigate('/')} />
+      <div style={{ padding: '0 22px 8px' }}>
+        <StepDots step={4} total={6} />
       </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
-        {/* Big prescription */}
-        <div style={{ marginBottom: 18 }}>
-          <div className="tns-eyebrow" style={{ marginBottom: 8 }}>Prescribed</div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-            <span className="tns-serif" style={{ fontSize: 96, lineHeight: 0.85 }}>{load}</span>
+      <div className="route-enter" style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
+        {/* Prescribed — static reference */}
+        <div style={{ marginBottom: 14 }}>
+          <div className="tns-eyebrow" style={{ marginBottom: 8, color: T.textMute }}>Prescribed</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
+            <span className="tns-serif" style={{ fontSize: 28, lineHeight: 0.85, color: T.textDim }}>{prescribedLoad}</span>
             <span className="tns-mono" style={{ fontSize: 14, color: T.textDim }}>KG</span>
-            <span className="tns-serif" style={{ fontSize: 42, lineHeight: 0.85, color: T.accent, marginLeft: 14 }}>× {reps}</span>
+            <span className="tns-serif" style={{ fontSize: 20, lineHeight: 0.85, color: T.textDim, marginLeft: 10 }}>× {ex.reps}</span>
+            <span className="tns-mono" style={{ fontSize: 11, color: T.textMute, marginLeft: 'auto' }}>RPE {ex.rpeTarget}</span>
           </div>
-          <div className="tns-mono" style={{ fontSize: 11, color: T.textMute, letterSpacing: '0.06em', marginTop: 10 }}>
+        </div>
+
+        {/* Actual load — editable */}
+        <div style={{ marginBottom: 14 }}>
+          <div className="tns-eyebrow" style={{ marginBottom: 8 }}>Actual load</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
+            <span className="tns-serif" style={{ fontSize: 72, lineHeight: 0.85 }}>{load}</span>
+            <span className="tns-mono" style={{ fontSize: 14, color: T.textDim }}>KG</span>
+          </div>
+          {load !== prescribedLoad && (
+            <button type="button" onClick={() => setLoad(prescribedLoad)} style={{ fontFamily: T.mono, fontSize: 10, color: T.accent, letterSpacing: '0.06em', background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0' }}>
+              USE PRESCRIBED →
+            </button>
+          )}
+          <div className="tns-mono" style={{ fontSize: 11, color: T.textMute, letterSpacing: '0.06em', marginTop: 6 }}>
             TARGET · RPE {rpe}  ·  {Math.round((load / (e1rmVal || 212)) * 100)}% e1RM  ·  REST 3:30
+          </div>
+          <div className="tns-mono" style={{ fontSize: 10, color: T.textMute, letterSpacing: '0.04em', marginTop: 4 }}>
+            {(() => {
+              const priorSessions = block.sessions
+                .filter(s => s.status === 'COMPLETE' && s.id !== currentSession.id)
+                .sort((a, b) => new Date(b.completedDate || b.scheduledDate).getTime() - new Date(a.completedDate || a.scheduledDate).getTime());
+              for (const s of priorSessions) {
+                const liftSets = s.sets.filter(set => set.exerciseId === ex.id && set.setType === 'TOP_SET');
+                if (liftSets.length > 0) {
+                  const last = liftSets[liftSets.length - 1];
+                  return `LAST WEEK · ${last.actualLoad} KG × ${last.actualReps} @ ${last.actualRpe}`;
+                }
+              }
+              return null;
+            })()}
           </div>
         </div>
 
@@ -178,21 +217,21 @@ export default function TopSet() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
           <div>
             <div className="tns-eyebrow" style={{ marginBottom: 6 }}>Load · kg</div>
-            <div style={{ border: `1px solid ${T.line}`, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ border: `1px solid ${T.line}`, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: 4, background: T.surface2 }}>
               <span className="tns-mono" style={{ fontSize: 22, fontWeight: 500 }}>{load.toFixed(1)}</span>
-              <span className="tns-mono" style={{ fontSize: 14, color: T.textMute, display: 'flex', gap: 10 }}>
-                <span style={{ cursor: 'pointer' }} onClick={() => setLoad(l => Math.max(0, l - 2.5))}>−</span>
-                <span style={{ cursor: 'pointer' }} onClick={() => setLoad(l => l + 2.5)}>+</span>
+              <span className="tns-mono" style={{ fontSize: 14, color: T.textMute, display: 'flex', gap: 4 }}>
+                <button type="button" aria-label="Decrease load by 2.5 kg" style={{ cursor: 'pointer', padding: '14px 18px', minWidth: 44, minHeight: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit' }} onClick={() => setLoad(l => Math.max(0, l - 2.5))}>−</button>
+                <button type="button" aria-label="Increase load by 2.5 kg" style={{ cursor: 'pointer', padding: '14px 18px', minWidth: 44, minHeight: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit' }} onClick={() => setLoad(l => l + 2.5)}>+</button>
               </span>
             </div>
           </div>
           <div>
             <div className="tns-eyebrow" style={{ marginBottom: 6 }}>Reps</div>
-            <div style={{ border: `1px solid ${T.line}`, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ border: `1px solid ${T.line}`, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: 4, background: T.surface2 }}>
               <span className="tns-mono" style={{ fontSize: 22, fontWeight: 500 }}>{reps}</span>
-              <span className="tns-mono" style={{ fontSize: 14, color: T.textMute, display: 'flex', gap: 10 }}>
-                <span style={{ cursor: 'pointer' }} onClick={() => setReps(r => Math.max(1, r - 1))}>−</span>
-                <span style={{ cursor: 'pointer' }} onClick={() => setReps(r => r + 1)}>+</span>
+              <span className="tns-mono" style={{ fontSize: 14, color: T.textMute, display: 'flex', gap: 4 }}>
+                <button type="button" aria-label="Decrease reps" style={{ cursor: 'pointer', padding: '14px 18px', minWidth: 44, minHeight: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit' }} onClick={() => setReps(r => Math.max(1, r - 1))}>−</button>
+                <button type="button" aria-label="Increase reps" style={{ cursor: 'pointer', padding: '14px 18px', minWidth: 44, minHeight: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit' }} onClick={() => setReps(r => r + 1)}>+</button>
               </span>
             </div>
           </div>
@@ -212,18 +251,19 @@ export default function TopSet() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="tns-eyebrow">Velocity (optional)</span>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <span className="tns-mono" style={{ fontSize: 9, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => navigate('/session/vbt-calibration')}>
+              <button type="button" aria-label="Calibrate velocity profile" className="tns-mono" style={{ fontSize: 9, color: T.textMute, letterSpacing: '0.08em', cursor: 'pointer', background: 'none', border: 'none', padding: 0, fontFamily: 'inherit' }} onClick={() => navigate('/session/vbt-calibration')}>
                 CALIBRATE →
-              </span>
-              <span className="tns-mono" style={{ fontSize: 9, color: T.accent, letterSpacing: '0.08em', cursor: 'pointer' }} onClick={() => setShowVelocity(!showVelocity)}>
+              </button>
+              <button type="button" aria-expanded={showVelocity} aria-label={showVelocity ? 'Hide velocity inputs' : 'Add velocity inputs'} className="tns-mono" style={{ fontSize: 9, color: T.accent, letterSpacing: '0.08em', cursor: 'pointer', background: 'none', border: 'none', padding: 0, fontFamily: 'inherit' }} onClick={() => setShowVelocity(!showVelocity)}>
                 {showVelocity ? 'HIDE' : 'ADD VBT →'}
-              </span>
+              </button>
             </div>
           </div>
           {showVelocity && (
             <>
-              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <input
+              <label htmlFor="velocity-mean" style={{fontSize: 11, color: T.textDim, marginBottom: 4, display: 'block'}}>Mean propulsive velocity (m/s)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input id="velocity-mean"
                   type="number"
                   step={0.01}
                   value={velocity ?? ''}
@@ -235,10 +275,10 @@ export default function TopSet() {
                     color: T.text, padding: '8px 10px', outline: 'none', width: 100,
                   }}
                 />
-                <span style={{ fontSize: 11, color: T.textDim }}>Mean propulsive velocity (m/s)</span>
               </div>
-              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <input
+              <label htmlFor="velocity-last" style={{fontSize: 11, color: T.textDim, marginBottom: 4, display: 'block'}}>Last-rep velocity (m/s)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input id="velocity-last"
                   type="number"
                   step={0.01}
                   value={lastRepVelocity ?? ''}
@@ -250,19 +290,16 @@ export default function TopSet() {
                     color: T.text, padding: '8px 10px', outline: 'none', width: 100,
                   }}
                 />
-                <span style={{ fontSize: 11, color: T.textDim }}>Last-rep velocity (m/s) — objective RPE check</span>
               </div>
             </>
           )}
         </div>
 
-        {/* VBT/LRV vs RPE divergence warning */}
+        {/* RPE divergence warning */}
         {rpeDivergenceWarning && (
-          <div style={{ marginTop: 14, padding: '10px 12px', background: 'rgba(232,193,78,0.08)', borderLeft: `2px solid ${T.caution}` }}>
-            <span className="tns-mono" style={{ fontSize: 9, color: T.caution, letterSpacing: '0.08em' }}>
-              {lastRepVelocity !== undefined && lastRepVelocity > 0 ? 'LRV-RPE DIVERGENCE' : 'VBT-RPE DIVERGENCE'}
-            </span>
-            <div style={{ marginTop: 4, fontSize: 12, color: T.textDim }}>{rpeDivergenceWarning}</div>
+          <div style={{ marginTop: 14, padding: '8px 12px', background: 'rgba(232,193,78,0.08)', borderLeft: `2px solid ${T.caution}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="tns-mono" style={{ fontSize: 9, color: T.caution, letterSpacing: '0.08em' }}>RPE CHECK</span>
+            <span style={{ fontSize: 12, color: T.textDim }}>{rpeDivergenceWarning}</span>
           </div>
         )}
 
@@ -276,26 +313,31 @@ export default function TopSet() {
               {Number(e1rmDiff) > 0 ? '+' : ''}{e1rmDiff}%
             </span>
           </div>
-          {/* Method breakdown */}
-          <div style={{ display: 'flex', gap: 12, marginTop: 10, paddingTop: 8, borderTop: `1px solid ${T.lineSoft}` }}>
-            <div style={{ flex: 1 }}>
-              <div className="tns-eyebrow" style={{ fontSize: 7.5, marginBottom: 2 }}>REP-BASED</div>
-              <span className="tns-mono" style={{ fontSize: 12, color: T.textDim }}>{methodBreakdown.repE1RM.toFixed(1)}</span>
-              <span className="tns-mono" style={{ fontSize: 8, color: T.textMute, marginLeft: 3 }}>· {(methodBreakdown.repConfidence * 100).toFixed(0)}%</span>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div className="tns-eyebrow" style={{ fontSize: 7.5, marginBottom: 2 }}>RPE-ADJ</div>
-              <span className="tns-mono" style={{ fontSize: 12, color: T.textDim }}>{methodBreakdown.rpeE1RM.toFixed(1)}</span>
-              <span className="tns-mono" style={{ fontSize: 8, color: T.textMute, marginLeft: 3 }}>· {(methodBreakdown.rpeConfidence * 100).toFixed(0)}%</span>
-            </div>
-            {methodBreakdown.vbtE1RM !== undefined && (
+          {/* Method breakdown toggle */}
+          <button type="button" onClick={() => setShowBreakdown(!showBreakdown)} style={{ fontFamily: T.mono, fontSize: 10, color: T.textMute, letterSpacing: '0.06em', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', marginTop: 8 }}>
+            {showBreakdown ? 'HIDE BREAKDOWN' : 'SHOW METHOD BREAKDOWN →'}
+          </button>
+          {showBreakdown && (
+            <div style={{ display: 'flex', gap: 12, marginTop: 10, paddingTop: 8, borderTop: `1px solid ${T.lineSoft}` }}>
               <div style={{ flex: 1 }}>
-                <div className="tns-eyebrow" style={{ fontSize: 7.5, marginBottom: 2 }}>VBT</div>
-                <span className="tns-mono" style={{ fontSize: 12, color: T.textDim }}>{methodBreakdown.vbtE1RM.toFixed(1)}</span>
-                <span className="tns-mono" style={{ fontSize: 8, color: T.textMute, marginLeft: 3 }}>· {((methodBreakdown.vbtConfidence ?? 0) * 100).toFixed(0)}%</span>
+                <div className="tns-eyebrow" style={{ fontSize: 7.5, marginBottom: 2 }}>REP-BASED</div>
+                <span className="tns-mono" style={{ fontSize: 12, color: T.textDim }}>{methodBreakdown.repE1RM.toFixed(1)}</span>
+                <span className="tns-mono" style={{ fontSize: 8, color: T.textMute, marginLeft: 3 }}>· {(methodBreakdown.repConfidence * 100).toFixed(0)}%</span>
               </div>
-            )}
-          </div>
+              <div style={{ flex: 1 }}>
+                <div className="tns-eyebrow" style={{ fontSize: 7.5, marginBottom: 2 }}>RPE-ADJ</div>
+                <span className="tns-mono" style={{ fontSize: 12, color: T.textDim }}>{methodBreakdown.rpeE1RM.toFixed(1)}</span>
+                <span className="tns-mono" style={{ fontSize: 8, color: T.textMute, marginLeft: 3 }}>· {(methodBreakdown.rpeConfidence * 100).toFixed(0)}%</span>
+              </div>
+              {methodBreakdown.vbtE1RM !== undefined && (
+                <div style={{ flex: 1 }}>
+                  <div className="tns-eyebrow" style={{ fontSize: 7.5, marginBottom: 2 }}>VBT</div>
+                  <span className="tns-mono" style={{ fontSize: 12, color: T.textDim }}>{methodBreakdown.vbtE1RM.toFixed(1)}</span>
+                  <span className="tns-mono" style={{ fontSize: 8, color: T.textMute, marginLeft: 3 }}>· {((methodBreakdown.vbtConfidence ?? 0) * 100).toFixed(0)}%</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
       <div style={{ padding: '14px 22px 28px', borderTop: `1px solid ${T.lineSoft}`, display: 'flex', gap: 8 }}>

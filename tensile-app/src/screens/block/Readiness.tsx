@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import type { Session } from '../../store';
-import { Phone, TabBar, T, Chart, ChartEmpty, Spark } from '../../shared';
+import { Phone, TabBar, T, Chart, ChartEmpty, Spark, BlockSubNav } from '../../shared';
 
 function weeklySrpeLoad(
   sessions: Session[],
@@ -121,6 +121,7 @@ export default function Readiness() {
           3 / 6 ›
         </div>
       </div>
+      <BlockSubNav active="readiness" />
       <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
         <div
           style={{
@@ -147,7 +148,7 @@ export default function Readiness() {
                   justifyContent: 'space-between',
                   marginTop: 4,
                   fontFamily: T.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   color: T.textMute,
                   letterSpacing: '0.06em',
                 }}
@@ -179,7 +180,7 @@ export default function Readiness() {
               padding: '8px 12px',
               background: T.surface,
               fontFamily: T.mono,
-              fontSize: 9,
+              fontSize: 11,
               color: T.textMute,
               letterSpacing: '0.06em',
               borderBottom: `1px solid ${T.lineSoft}`,
@@ -221,7 +222,7 @@ export default function Readiness() {
                     <span
                       className="tns-mono"
                       style={{
-                        fontSize: 8,
+                        fontSize: 11,
                         color: T.good,
                         marginLeft: 6,
                         letterSpacing: '0.08em',
@@ -233,7 +234,7 @@ export default function Readiness() {
                     <span
                       className="tns-mono"
                       style={{
-                        fontSize: 8,
+                        fontSize: 11,
                         color: T.bad,
                         marginLeft: 6,
                         letterSpacing: '0.08em',
@@ -245,7 +246,7 @@ export default function Readiness() {
                     <span
                       className="tns-mono"
                       style={{
-                        fontSize: 8,
+                        fontSize: 11,
                         color: T.textMute,
                         marginLeft: 6,
                         letterSpacing: '0.08em',
@@ -312,7 +313,7 @@ export default function Readiness() {
                   justifyContent: 'space-between',
                   marginTop: 4,
                   fontFamily: T.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   color: T.textMute,
                   letterSpacing: '0.06em',
                 }}

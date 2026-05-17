@@ -2,20 +2,25 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { getBackOffDrop, calculateSetSFI, ensembleE1RM, inferLiftKey, resolveLvProfile } from '../../engine';
-import { T, Phone, PrimaryBtn } from '../../shared';
+import { T, Phone, AppHeader, PrimaryBtn, StepDots } from '../../shared';
 import type { SetLog } from '../../store';
 
 function RPEPad({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const levels = [6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
+  const rows = [
+    [6, 6.5, 7],
+    [7.5, 8, 8.5],
+    [9, 9.5, 10],
+  ];
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, 1fr)', gap: 4 }}>
-      {levels.map(l => (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+      {rows.flat().map(l => (
         <div key={l} onClick={() => onChange(l)} style={{
           padding: '14px 0', textAlign: 'center', cursor: 'pointer',
           border: `1px solid ${l === value ? T.accent : T.line}`,
           background: l === value ? T.accent : 'transparent',
           color: l === value ? '#1a0f08' : T.text,
-          fontFamily: T.mono, fontSize: 12, fontWeight: 500,
+          fontFamily: T.mono, fontSize: 13, fontWeight: 500,
+          minHeight: 48, userSelect: 'none', touchAction: 'manipulation',
         }}>{l}</div>
       ))}
     </div>
@@ -139,11 +144,11 @@ export default function DropProtocol() {
 
   return (
     <Phone>
-      <div style={{ padding: '8px 22px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span className="tns-eyebrow">{exerciseLabel} · Back-off · Set {currentSetNum}</span>
-        <span className="tns-mono" style={{ fontSize: 11, color: T.textMute, cursor: 'pointer' }} onClick={() => navigate('/session/summary')}>FINISH ×</span>
+      <AppHeader eyebrow={`${exerciseLabel} · Back-off · Set ${currentSetNum}`} title="Back-off" close onClose={() => navigate('/session/summary')} />
+      <div style={{ padding: '0 22px 8px' }}>
+        <StepDots step={5} total={6} />
       </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
+      <div className="route-enter" style={{ flex: 1, overflow: 'auto', padding: '0 22px 14px' }}>
         {/* Drop progress */}
         <div style={{ marginBottom: 18 }}>
           <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Load drop protocol · −{Math.round(getBackOffDrop(block.phase) * 100)}%</div>
@@ -159,12 +164,12 @@ export default function DropProtocol() {
                   background: isCurrent ? T.accent : isDone ? '#26221a' : 'transparent',
                   color: isCurrent ? '#1a0f08' : isDone ? T.text : T.textMute,
                   fontFamily: T.mono, fontSize: 11, fontWeight: 500,
-                }}>{isCapped && !isDone && !isCurrent ? 'CAP' : isDone ? '✓' : isCurrent ? '?' : '—'}</div>
+                }}>{isCapped && !isDone && !isCurrent ? 'MAX' : isDone ? '✓' : isCurrent ? '?' : '—'}</div>
               );
             })}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: T.mono, fontSize: 9, color: T.textMute, letterSpacing: '0.06em' }}>
-            <span>SET 1</span><span>STOP @ RPE {stopRpe}</span><span>CAP {maxBackOffSets}</span>
+            <span>SET 1</span><span>STOP @ RPE {stopRpe}</span><span>MAX {maxBackOffSets}</span>
           </div>
         </div>
 

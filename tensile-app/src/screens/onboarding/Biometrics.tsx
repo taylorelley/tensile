@@ -98,6 +98,7 @@ export default function Biometrics() {
   const [kneeSleeves, setKneeSleeves] = useState(profile.kneeSleeves);
 
   const [showNoviceGate, setShowNoviceGate] = useState(false);
+  const [showEquipment, setShowEquipment] = useState(false);
 
   const handleContinue = () => {
     // Training age gate: < 6 months is out of scope for v1.0
@@ -162,6 +163,9 @@ export default function Biometrics() {
       </div>
 
       <div className="tns-eyebrow" style={{ marginBottom: 10 }}>Training age</div>
+      <div style={{ fontSize: 11, color: T.textDim, lineHeight: 1.45, marginBottom: 10 }}>
+        Training age determines how aggressively we progress your loads.
+      </div>
       {trainingAges.map(ta => (
         <Choice key={ta} label={ta} selected={trainingAge === ta} onClick={() => setTrainingAge(ta)} />
       ))}
@@ -194,45 +198,64 @@ export default function Biometrics() {
       <div className="tns-eyebrow" style={{ marginTop: 18, marginBottom: 10 }}>Programming mode</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         {([
-          { id: 'PHASE', label: 'Traditional phases', sub: 'Accumulation → Intensification → Realisation. Stimulus changes shape every few weeks.' },
-          { id: 'TTP', label: 'Bottom-up TTP', sub: 'Constant microcycle. Loads rise as your e1RM does. Block ends when you stop progressing.' },
+          { id: 'PHASE', label: 'Traditional phases', sub: 'Accumulation → Intensification → Realisation. Stimulus changes shape every few weeks.', recommended: true },
+          { id: 'TTP', label: 'Bottom-up TTP', sub: 'Constant microcycle. Loads rise as your e1RM does. Block ends when you stop progressing.', recommended: false },
         ] as const).map(opt => (
           <div key={opt.id} onClick={() => setProgrammingMode(opt.id)} style={{
             border: `1px solid ${programmingMode === opt.id ? T.accent : T.line}`,
             background: programmingMode === opt.id ? 'rgba(255,110,58,0.06)' : 'transparent',
-            padding: '12px 14px', cursor: 'pointer',
+            padding: '12px 14px', cursor: 'pointer', position: 'relative',
           }}>
+            {opt.recommended && (
+              <div style={{ position: 'absolute', top: 6, right: 6, fontFamily: T.mono, fontSize: 7, color: T.accent, letterSpacing: '0.1em', fontWeight: 600 }}>REC</div>
+            )}
             <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{opt.label}</div>
             <div style={{ fontSize: 11, color: T.textDim, lineHeight: 1.45 }}>{opt.sub}</div>
           </div>
         ))}
       </div>
 
-      <div className="tns-eyebrow" style={{ marginTop: 18, marginBottom: 10 }}>Squat stance</div>
-      {['Narrow', 'Moderate', 'Wide'].map(s => (
-        <Choice key={s} label={s} selected={squatStance === s.toLowerCase()} onClick={() => setSquatStance(s.toLowerCase())} />
-      ))}
-
-      <div className="tns-eyebrow" style={{ marginTop: 18, marginBottom: 10 }}>Deadlift stance</div>
-      {['Conventional', 'Sumo', 'Mixed'].map(s => (
-        <Choice key={s} label={s} selected={deadliftStance === s.toLowerCase()} onClick={() => setDeadliftStance(s.toLowerCase())} />
-      ))}
-
-      <div className="tns-eyebrow" style={{ marginTop: 18, marginBottom: 10 }}>Belt</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
-        {[true, false].map(v => (
-          <div key={String(v)} onClick={() => setBelt(v)} style={{
-            border: `1px solid ${belt === v ? T.accent : T.line}`,
-            background: belt === v ? 'rgba(255,110,58,0.06)' : 'transparent',
-            padding: '12px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', textAlign: 'center',
-          }}>{v ? 'Yes' : 'No'}</div>
-        ))}
+      {/* Equipment & stance — progressive disclosure */}
+      <div
+        onClick={() => setShowEquipment(!showEquipment)}
+        style={{
+          marginTop: 18, padding: '12px 14px', border: `1px solid ${T.lineSoft}`,
+          background: T.surface2, cursor: 'pointer',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}
+      >
+        <span className="tns-eyebrow" style={{ marginBottom: 0 }}>Equipment & stance</span>
+        <span className="tns-mono" style={{ fontSize: 10, color: T.textMute }}>{showEquipment ? '▲' : '▼'}</span>
       </div>
+      {showEquipment && (
+        <>
+          <div className="tns-eyebrow" style={{ marginTop: 14, marginBottom: 10 }}>Squat stance</div>
+          {['Narrow', 'Moderate', 'Wide'].map(s => (
+            <Choice key={s} label={s} selected={squatStance === s.toLowerCase()} onClick={() => setSquatStance(s.toLowerCase())} />
+          ))}
 
-      <div className="tns-eyebrow" style={{ marginTop: 18, marginBottom: 10 }}>Knee sleeves</div>
-      {['Raw', 'Sleeves', 'Wraps'].map(s => (
-        <Choice key={s} label={s} selected={kneeSleeves === s.toLowerCase()} onClick={() => setKneeSleeves(s.toLowerCase())} />
-      ))}
+          <div className="tns-eyebrow" style={{ marginTop: 14, marginBottom: 10 }}>Deadlift stance</div>
+          {['Conventional', 'Sumo', 'Mixed'].map(s => (
+            <Choice key={s} label={s} selected={deadliftStance === s.toLowerCase()} onClick={() => setDeadliftStance(s.toLowerCase())} />
+          ))}
+
+          <div className="tns-eyebrow" style={{ marginTop: 14, marginBottom: 10 }}>Belt</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+            {[true, false].map(v => (
+              <div key={String(v)} onClick={() => setBelt(v)} style={{
+                border: `1px solid ${belt === v ? T.accent : T.line}`,
+                background: belt === v ? 'rgba(255,110,58,0.06)' : 'transparent',
+                padding: '12px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', textAlign: 'center',
+              }}>{v ? 'Yes' : 'No'}</div>
+            ))}
+          </div>
+
+          <div className="tns-eyebrow" style={{ marginTop: 14, marginBottom: 10 }}>Knee sleeves</div>
+          {['Raw', 'Sleeves', 'Wraps'].map(s => (
+            <Choice key={s} label={s} selected={kneeSleeves === s.toLowerCase()} onClick={() => setKneeSleeves(s.toLowerCase())} />
+          ))}
+        </>
+      )}
 
       {/* Novice gate modal */}
       {showNoviceGate && (

@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
-import { T, Phone, AppHeader, PrimaryBtn } from '../shared';
+import { T, Phone, AppHeader, PrimaryBtn, Pressable } from '../shared';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -44,7 +44,7 @@ export default function Settings() {
             const isCurrent = effectiveMode === opt.id;
             const isPending = pendingMode === opt.id;
             return (
-              <div
+              <Pressable
                 key={opt.id}
                 onClick={() => switchMode(opt.id)}
                 style={{
@@ -52,14 +52,16 @@ export default function Settings() {
                   background: isCurrent ? 'rgba(255,110,58,0.06)' : 'transparent',
                   padding: '12px 14px',
                   cursor: 'pointer',
+                  minHeight: 80,
                 }}
+                activeStyle={{ opacity: 0.7 }}
               >
                 <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{opt.label}</div>
                 <div style={{ fontSize: 11, color: T.textDim, lineHeight: 1.45 }}>{opt.sub}</div>
                 {isPending && !isCurrent && (
                   <div style={{ marginTop: 6, fontSize: 10, color: T.caution }}>Switches at next block boundary</div>
                 )}
-              </div>
+              </Pressable>
             );
           })}
         </div>
@@ -80,7 +82,7 @@ export default function Settings() {
             { id: 'NONE', label: 'Off', sub: 'No telemetry export.' },
             { id: 'AGGREGATE', label: 'Aggregate', sub: 'Allow sanitised JSON export.' },
           ] as const).map((opt) => (
-            <div
+            <Pressable
               key={opt.id}
               onClick={() => setTelemetryConsent(opt.id)}
               style={{
@@ -88,11 +90,13 @@ export default function Settings() {
                 background: profile.telemetryConsent === opt.id ? 'rgba(255,110,58,0.06)' : 'transparent',
                 padding: '12px 14px',
                 cursor: 'pointer',
+                minHeight: 80,
               }}
+              activeStyle={{ opacity: 0.7 }}
             >
               <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{opt.label}</div>
               <div style={{ fontSize: 11, color: T.textDim, lineHeight: 1.45 }}>{opt.sub}</div>
-            </div>
+            </Pressable>
           ))}
         </div>
         <div style={{ marginTop: 14 }}>
